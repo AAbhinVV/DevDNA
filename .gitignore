@@ -1,0 +1,19 @@
+# DevDNA SQLite database (contains user patterns, NEVER commit)
+devdna.db
+devdna.db-journal
+devdna.db-wal
+devdna.db-shm
+
+# Generated SDK output (auto-generated, not source code)
+my_sdk/
+!my_sdk/__init__.py        # Keep these as templates/examples
+!my_sdk/pyproject.toml
+
+# DevDNA config (may contain local paths)
+.devdna.toml
+.devdna.yaml
+.devdna.yml
+
+# DevDNA logs & cache
+devdna.log
+devdna-cache/

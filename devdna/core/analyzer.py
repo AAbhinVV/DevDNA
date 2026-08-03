@@ -1,20 +1,29 @@
-from typing import List, Dict
+from __future__ import annotations
+
+from typing import List, Dict, Optional, Set
+from pathlib import Path
 from collections import defaultdict
 from devdna.core.scanner import CodeBlock
 
 class PatternCluster:
+
+    HIGH_THRESHOLD  =(10,5)
+    MEIDUM_THRESHOLD=(5,3)
+
     def __init__(self, struct_hash: str):
         self.struct_hash = struct_hash
         self.blocks: List[CodeBlock] = []
-        self.confidence = "Low"
-        self._source_files: set = set()
+        self._source_files: Set[Path] = set()
+        self._confidence_label = "Low"
+        self._confidence_score = 0.0
 
     def add(self, code_block: CodeBlock) -> None:
         self.blocks.append(code_block)
-        self._source_files.add(str(code_block.filepath))
-        self.update_confidence()
+        self._source_files.add(code_block.filepath)
+        self._recalculate_confidence()
 
-    def _update_confidence(self) -> None:
+
+    def _recalculate_confidence(self) -> None:
         '''confidence calculation based on occurence:
             High:   >= 10 occurrences across >= 5 unique files (strong for sdk)
             Medium: >= 5 occurrences across >= 3 unique files (common pattern, worth reviewing)
@@ -23,12 +32,23 @@ class PatternCluster:
 
         count = len(self.blocks)
         unique_files = len(self._source_files)
-        if count>=10 and unique_files>=5:
-            self.confidence = "High"
-        elif count>=5 and unique_files>=3:
-            self.confidence = "Medium"
+        if count>=self.HIGH_THRESHOLD[0] and unique_files>=self.HIGH_THRESHOLD[1]:
+            self._confidence_label = "High"
+            self._confidence_score = 0.9
+        elif count>=self.MEDIUM_THRESHOLD[0] and unique_files>=self.MEDIUM_THRESHOLD[1]:
+            self._confidence_label = "Medium"
+            self._confidence_score = 0.6
         else:
-            self.confidence = "Low"
+            self._confidence_label = "Low"
+            self._confidence_score = 0.3
+
+    @property
+    def confidence_score(self) -> float:
+        return self._confidence_score
+
+    @property
+    def confidence_label(self) -> str:
+        return self._confidence_label
 
     @property
     def source_count(self) -> int:
@@ -38,11 +58,19 @@ class PatternCluster:
     def unique_file_count(self) -> int:
         return len(self._source_files)
 
+    def top_examples(self, n: int = 3) -> List[CodeBlock]:
+        '''return top n examples of code blocks in this cluster'''
+        return self.blocks[:n]
+
     def __repr__(self) -> str:
         # returns a string that looks liek constructor call with all the attributes
         return (
-            f"PatterCluster({self.source_count} sources, {len(self.blocks)} blocks, confidence={self.confidence})"
-            f"{self.unique_file_count} unique files"
+            f"PatternCluster("
+            f"hash={self.struct_hash[:8]}..., "
+            f"blocks={len(self.blocks)}, "
+            f"files={self.unique_file_count}, "
+            f"confidence={self._confidence_label}"
+            f")"
         )
 
     def __len__(self) -> int:
@@ -82,12 +110,13 @@ def cluster_by_structure(
         Medium: load_data
         Low: helper_function
     """
-    hash_groups = Dict[str, List[CodeBlock]] = defaultdict(list)
+    hash_groups: Dict[str, List[CodeBlock]] = defaultdict(list)
 
     for block in blocks:
-        hash_groups[block.struct_hash].append(block) # blocks grouped by struct_hash
+        if block.struct_hash:
+            hash_groups[block.struct_hash].append(block) # blocks grouped by struct_hash
 
-    clusters = []
+    clusters: List[PatternCluster] = []
     for struct_hash, group_blocks in hash_groups.items():
         if len(group_blocks) >= min_cluster_size:
             cluster = PatternCluster(struct_hash)
@@ -97,10 +126,10 @@ def cluster_by_structure(
 
 
     #confidence sorting
+    confidence_order = {"High": 0, "Medium": 1, "Low": 2}
     clusters.sort(
         key=lambda c: (
-            c.confidence != "High",
-            c.confidence != "Medium",
+            confidence_order[c.confidence_label],
             -c.source_count #descending sort
         )
     )
@@ -153,6 +182,6 @@ def get_cluster_stats(clusters: List[PatternCluster]) -> dict:
         "high_confidence": high,
         "medium_confidence": medium,
         "low_confidence": low,
-        "total_blocks": sum(c.source_count for c in clusters),
+        "total_blocks": sum(c.source_file_count for c in clusters),
         "total_unique_files": sum(c.unique_file_count for c in clusters),
     }

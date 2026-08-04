@@ -201,3 +201,69 @@ class MemoryStore:
 
     def reject(self, pattern_id: int) -> None:
         self.update_status(pattern_id, "rejected")
+
+
+    def log_sync(self, root_path: str) -> None:
+        sql = "INSERT INTO sync_history (root_path, started_at) VALUES (?, ?)"
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(sql, (str(root_path), self._now()))
+            conn.commit()
+            return cursor.lastrowid
+
+    def log_sync_complete(
+            self,
+            sync_id: int,
+            functions_found: int,
+            patterns_detected: int,
+            proposals_generated: int,
+    ) -> tuple[bool, str]:
+        
+        sql = """
+        UPDATE sync_history
+        SET functions_found = ?,
+            patterns_detected = ?,
+            proposals_generated = ?,
+            completed_at = ?
+        WHERE id = ?
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                sql,
+                (
+                    functions_found,
+                    patterns_detected,
+                    proposals_generated,
+                    self._now(),
+                    sync_id,
+                ),
+            )
+            conn.commit()
+        if cursor.rowcount == 1:
+            msg = (
+                f"Sync {sync_id} recorded: "
+                f"{functions_found} functions, {patterns_detected} patterns, "
+                f"{proposals_generated} proposals generated."
+            )
+            return True, msg
+        else:
+            msg = f"Warning: Sync ID {sync_id} not found — stats not recorded."
+            return False, msg
+
+
+    def get_recent_syncs(
+            self,
+            limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        
+        sql = """
+            SELECT
+                id, root_path, functions_found, patterns_detected,
+                proposals_generated, started_at, completed_at
+            FROM sync_history
+            ORDER BY started_at DESC
+            LIMIT ?
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(sql, (limit,)).fetchall()
+            return [dict(row) for row in rows]

@@ -180,7 +180,7 @@ class MemoryStore:
     def get_accepted(self, limit: int = 100) -> List[StoredPattern]:
         return self.get_by_status("accepted", limit=limit)
 
-    def update_status(self, pattern_id: int, new_status: str) -> None:
+    def update_status(self, pattern_id: int, new_status: str) -> tuple[bool, str]:
         if new_status not in self.STATUSES:
             raise ValueError(f"Invalid status: {new_status}, use one of {self.STATUSES}")
 
@@ -195,6 +195,8 @@ class MemoryStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(sql, (new_status, self._now(), pattern_id))
             conn.commit()
+
+        return True, f"Pattern '{row_name}' updated to {new_status}."
 
     def accept(self, pattern_id: int) -> None:
         self.update_status(pattern_id, "accepted")
@@ -252,7 +254,7 @@ class MemoryStore:
 
     def get_recent_syncs(
             self,
-            limit: int = 10,
+            limit: int = 10
     ) -> List[Dict[str, Any]]:
         
         sql = """
@@ -267,3 +269,46 @@ class MemoryStore:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(sql, (limit,)).fetchall()
             return [dict(row) for row in rows]
+
+
+    def get_stats(self) -> Dict[str, Any]:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'proposed' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) as accepted,
+                    SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+                FROM patterns
+                """
+            )
+            row = cursor.fetchone()
+            return {
+                "total_patterns": row[0] or 0,
+                "pending": row[1] or 0,
+                "accepted": row[2] or 0,
+                "rejected": row[3] or 0,
+            }
+
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod 
+    def _row_to_pattern(row: sqlite3.Row) -> StoredPattern:
+        return StoredPattern(
+            id=row["id"],
+            function_name=row["function_name"],
+            signature=row["signature"],
+            implementation=row["implementation"],
+            suggested_module=row["suggested_module"],
+            description=row["description"],
+            confidence_reasoning=row["confidence_reasoning"],
+            source_hash=row["source_hash"],
+            example_count=row["example_count"],
+            status=row["status"],
+            created_at=row["created_at"],
+            reviewed_at=row["reviewed_at"],
+        )

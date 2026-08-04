@@ -1,0 +1,203 @@
+'''
+Dict intput
+parametrized queries
+skip duplicates(source_hash comparison)
+timestamps
+SQLITE persistance layer
+never delete proposals, change status
+sync history logs every run
+timestamps on every record
+'''
+
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+@dataclass
+class StoredPattern:
+    id: int
+    function_name: str
+    signature: str
+    implementation: str
+    suggested_module: str
+    description: str
+    confidence_reasoning: str
+    source_hash: str
+    example_count: int
+    status: str
+    created_at: str
+    reviewed_at: Optional[str]
+
+class MemoryStore:
+    """
+    SQLite-backed store for pattern proposals and sync history.
+
+    Usage:
+        store = MemoryStore()
+        pid = store.save_proposal({...})
+        pending = store.get_pending(limit=10)
+        store.accept(pid)
+    """
+
+    STATUSES = ("proposed", "accepted", "rejected")
+
+    def __init__(self, dbPath: Optional[Path] = None) -> None:
+        if db_path is None:
+            db_path = Path.home() / ".devdna" / "devdna.db"
+
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_schema()
+
+    def _init_schema(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS patterns (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    function_name TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    implementation TEXT NOT NULL,
+                    suggested_module TEXT NOT NULL DEFAULT 'utils',
+                    description TEXT,
+                    confidence_reasoning TEXT,
+                    source_hash TEXT NOT NULL,
+                    example_count INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL
+                        CHECK(status IN ('proposed', 'accepted', 'rejected')),
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    reviewed_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS sync_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    root_path TEXT NOT NULL,
+                    functions_found INTEGER NOT NULL DEFAULT 0,
+                    patterns_detected INTEGER NOT NULL DEFAULT 0,
+                    proposals_generated INTEGER NOT NULL DEFAULT 0,
+                    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    completed_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_patterns_status
+                    ON patterns(status);
+                CREATE INDEX IF NOT EXISTS idx_patterns_hash
+                    ON patterns(source_hash);
+                CREATE INDEX IF NOT EXISTS idx_patterns_created
+                    ON patterns(created_at);
+                """
+            )
+            conn.commit()
+
+
+    def save_proposal(self, proposal: Dict[str, Any], skip_duplicates: bool = True) -> Optional[int]:
+        """
+        Save a new pattern proposal to the database.
+        Returns the ID of the inserted record.
+        """
+        required = {
+             "function_name",
+            "signature",
+            "implementation",
+            "source_hash",
+            "example_count",
+        }
+
+        missing = required - set(proposal.keys())
+        if missing:
+            raise ValueError(f"Missing required fields: {missing}")
+
+        if skip_duplicates and self._hash_exists(proposal["source_hash"]):
+            return None
+
+        sql = """
+            INSERT INTO patterns (
+                function_name, signature, implementation, suggested_module,
+                description, confidence_reasoning, source_hash, example_count,
+                status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+
+        params = (
+            proposal["function_name"],
+            proposal["signature"],
+            proposal["implementation"],
+            proposal.get("suggested_module", "utils"),
+            proposal.get("description", ""),
+            proposal.get("confidence_reasoning", ""),
+            proposal["source_hash"],
+            proposal["example_count"],
+            "proposed",
+            self._now(),
+        )
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(sql, params)
+            conn.commit()
+            return cursor.lastrowid
+
+    def _hash_exists(self, source_hash: str) -> bool:
+        sql = "SELECT 1 FROM patterns WHERE source_hash = ? LIMIT 1"
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(sql, (source_hash,)).fetchone()
+            return cursor is not None
+
+    def get_by_status(self, status: str, limit: int = 100, order_by: str = "created_at_DESC") -> List[StoredPattern]:
+        #limti max rows to return
+        if status not in self.STATUSES:
+            raise ValueError(f"Invalid status: {status}, use one of {self.STATUSES}")
+
+        allowed_orders = {
+            "created_at DESC": "created_at DESC",
+            "created_at ASC": "created_at ASC",
+            "example_count DESC": "example_count DESC",
+        }
+
+        order_clause = allowed_orders.get(order_by, "created_at DESC")
+        sql = f"""
+            SELECT
+                id, function_name, signature, implementation,
+                suggested_module, description, confidence_reasoning,
+                source_hash, example_count, status, created_at, reviewed_at
+            FROM patterns
+            WHERE status = ?
+            ORDER BY {order_clause}
+            LIMIT ?
+        """
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(sql, (status, limit)).fetchall()
+            return [self._row_to_pattern(row) for row in rows]
+
+    def get_pending(self, limit: int = 100) -> List[StoredPattern]:
+        return self.get_by_status("proposed", limit=limit)
+
+    def get_accepted(self, limit: int = 100) -> List[StoredPattern]:
+        return self.get_by_status("accepted", limit=limit)
+
+    def update_status(self, pattern_id: int, new_status: str) -> None:
+        if new_status not in self.STATUSES:
+            raise ValueError(f"Invalid status: {new_status}, use one of {self.STATUSES}")
+
+        if new_status == "proposed":
+            raise ValueError("Cannot manually set status to 'proposed', use 'accepted' or 'rejected'")
+
+        sql = """
+            UPDATE patterns
+            SET status = ?, reviewed_at = ?
+            WHERE id = ?
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(sql, (new_status, self._now(), pattern_id))
+            conn.commit()
+
+    def accept(self, pattern_id: int) -> None:
+        self.update_status(pattern_id, "accepted")
+
+    def reject(self, pattern_id: int) -> None:
+        self.update_status(pattern_id, "rejected")

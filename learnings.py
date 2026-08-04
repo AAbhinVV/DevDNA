@@ -54,3 +54,19 @@ for i in range(SIZE):
 #@property deifined a method in a class that can be called liek an attribute without parentheses. It is used to define a getter method for a property of a class. When you access the property, the getter method is automatically called, and its return value is returned as the value of the property. This allows you to encapsulate the logic for calculating or retrieving the value of a property while still providing a simple and intuitive interface for accessing it.
 #@__repr__ is present with every data types deinfition, when print is called ti refers to that datatypes __repr__
 # we can use__repr__ to provide a string representation of an object that is useful for debugging and development. It can be used to display the internal state of an object, including its attributes and their values, in a human-readable format. This can help developers understand how an object is structured and how it behaves in different contexts. Additionally, __repr__ can be used to create a string representation of an object that can be used to recreate the object later, which can be useful for serialization and deserialization.
+
+"""
+        Insert a new pattern proposal.
+
+        Args:
+            proposal: Dict with keys matching PatternProposal fields.
+                Required: function_name, signature, implementation,
+                          source_hash, example_count.
+                Optional: suggested_module, description,
+                          confidence_reasoning.
+            skip_duplicates: If True (default), ignores proposals whose
+                source_hash already exists in the DB.
+
+        Returns:
+            Row ID of the inserted pattern, or None if skipped as duplicate.
+        """ #saveprposal task in memory.py

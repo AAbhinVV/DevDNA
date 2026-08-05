@@ -98,5 +98,19 @@ class ReviewUI:
                 "q": "quit",
             }[choice.lower()]
     
+    def _show_summary(self, stats: dict, total: int) -> None:
+            # final stats
+            self.console.clear()
+            self.console.print("[bold] Review Complete [/bold]\n", justify="center")
     
+            table = Table(title="Summary", show_header=True, header_style="bold")
+            table.add_column("Decision", style="cyan")
+            table.add_column("Count", justify="right", style="magenta")
+    
+            table.add_row("Accepted", str(stats["accepted"]))
+            table.add_row("Rejected", str(stats["rejected"]))
+            table.add_row("Skipped (remain pending)", str(stats["skipped"]))
+            table.add_row("Remaining unreviewed", str(
+                total - stats["accepted"] - stats["rejected"] - stats["skipped"]
+            ), style="dim")
         

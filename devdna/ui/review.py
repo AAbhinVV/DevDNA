@@ -25,6 +25,7 @@ class ReviewUI:
                 "Run [cyan]devdna sync[/cyan] to discover new patterns.")
             return
 
+
         self.console.print(
             f"[bold]Found {len(pending_patterns)} proposal(s) to review.[/bold]\n"
         )
@@ -45,8 +46,9 @@ class ReviewUI:
                     stats["skipped"] += 1
                 case "quit":
                     break
-
-        self._show_summary(stats, len(pending_patterns))
+                 
+        remaining = self.store.get_pending(limit=100)
+        self._show_summary(stats, len(pending_patterns), remaining)
 
     def _review_single(self, pattern: StoredPattern, current: int, total: int) -> str:
             # Implementation for reviewing a single pattern
@@ -98,7 +100,7 @@ class ReviewUI:
                 "q": "quit",
             }[choice.lower()]
     
-    def _show_summary(self, stats: dict, total: int) -> None:
+    def _show_summary(self, stats: dict, total: int, remaining: List[StoredPattern]) -> None:
             # final stats
             self.console.clear()
             self.console.print("[bold] Review Complete [/bold]\n", justify="center")
@@ -107,10 +109,73 @@ class ReviewUI:
             table.add_column("Decision", style="cyan")
             table.add_column("Count", justify="right", style="magenta")
     
-            table.add_row("Accepted", str(stats["accepted"]))
-            table.add_row("Rejected", str(stats["rejected"]))
-            table.add_row("Skipped (remain pending)", str(stats["skipped"]))
-            table.add_row("Remaining unreviewed", str(
-                total - stats["accepted"] - stats["rejected"] - stats["skipped"]
-            ), style="dim")
-        
+            table.add_row("Accepted", Text(str(stats["accepted"]), style="green"))
+            table.add_row("Rejected", Text(str(stats["rejected"]), style="red"))
+            table.add_row("Skipped (still pending)", Text(str(stats["skipped"]), style="yellow"))
+
+            never_seen = total - stats["reviewed"] 
+            if never_seen > 0:
+                table.add_row(
+                    "Never reviewed (quit early)",
+                    Text(str(never_seen), style="dim red"),
+                )
+
+            table.add_row(
+                "Total still pending",
+                Text(str(len(remaining)), style="bold yellow"),
+            )
+            self.console.print(table)
+
+            #gist fo whats left
+            if remaining:
+                self.console.print(f"\n[bold]What's left for review:[/bold]")
+                
+                rem_table = Table(show_header=True, header_style="dim")
+                rem_table.add_column("#", justify="right", style="dim")
+                rem_table.add_column("Function", style="green")
+                rem_table.add_column("Module", style="yellow")
+                rem_table.add_column("Sources", justify="right", style="magenta")
+                rem_table.add_column("Preview", style="dim")
+
+                for i, p in enumerate(remaining[:5], 1):
+                    # One-line preview: first line of implementation stripped
+                    preview = p.implementation.split("\n")[0].strip()[:40]
+                    if len(p.implementation.split("\n")[0].strip()) > 40:
+                        preview += "…"
+                    
+                    rem_table.add_row(
+                        str(i),
+                        p.function_name,
+                        p.suggested_module,
+                        str(p.example_count),
+                        preview,)
+
+            if len(remaining) > 5:
+                rem_table.add_row(
+                    "",
+                    f"… and {len(remaining) - 5} more",
+                    "",
+                    "",
+                    "",
+                    style="dim",
+                )
+
+            self.console.print(rem_table)
+
+            #what next
+            self.console.print()
+            if stats["accepted"] > 0:
+                self.console.print(
+                    f"[green]→[/green] Run [cyan]devdna generate[/cyan] "
+                    f"to build SDK with {stats['accepted']} accepted pattern(s)."
+                )
+            if remaining:
+                self.console.print(
+                    f"[yellow]→[/yellow] {len(remaining)} pattern(s) still pending. "
+                    "Run [cyan]devdna review[/cyan] anytime to continue."
+                )
+            if not remaining and stats["accepted"] == 0:
+                self.console.print(
+                    "[dim]All patterns resolved with no acceptances.[/dim]"
+                )
+

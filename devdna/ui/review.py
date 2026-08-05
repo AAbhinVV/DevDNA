@@ -48,4 +48,55 @@ class ReviewUI:
 
         self._show_summary(stats, len(pending_patterns))
 
+    def _review_single(self, pattern: StoredPattern, current: int, total: int) -> str:
+            # Implementation for reviewing a single pattern
+            self.console.clear()
     
+            header = Text.assemble(
+                 ("DevDNA Review", "bold cyan"),
+                " — ",
+                (f"Pattern {current} of {total}", "dim"),
+            )
+            self.console.print(header, justify = "center")
+            self.console.rule()
+    
+            metadata = Text.assemble(
+                ("Name: ", "bold"), (pattern.function_name, "green"), "\n",
+                ("Module: ", "bold"), (pattern.suggested_module, "yellow"), "\n",
+                ("Sources: ", "bold"), (str(pattern.example_count), "magenta"), " files\n",
+                ("Hash: ", "bold"), (pattern.source_hash[:8] + "...", "dim"),
+            )
+            self.console.print(Panel(metadata, title="Metadata", border_style="blue"))
+    
+            code_syntax = Syntax(
+                pattern.implementation,
+                "python",
+                theme="monokai",
+                line_numbers=True,
+                word_wrap=True,
+            )
+    
+            self.console.print(Panel(code_syntax, title="Proposed Implementation", border_style="green"))
+    
+            # confidence reasoning
+            if pattern.confidence_reasoning:
+                self.console.print(Panel(pattern.confidence_reasoning, title="Confidence Reasoning", border_style="yellow",))
+    
+            # decision prompt
+            self.console.print()
+            choice = Prompt.ask(
+                "[bold]Decision[/bold]",
+                choices=["a", "r", "s", "q"],
+                show_choices=True,
+                case_sensitive=False,
+            )
+    
+            return {
+                "a": "accept",
+                "r": "reject",
+                "s": "skip",
+                "q": "quit",
+            }[choice.lower()]
+    
+    
+        

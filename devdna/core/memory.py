@@ -193,7 +193,7 @@ class MemoryStore:
             WHERE id = ?
         """
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(sql, (new_status, self._now(), pattern_id))
+            cursor = conn.execute(sql, (new_status, self._now(), pattern_id))
             conn.commit()
 
         return True, f"Pattern '{row_name}' updated to {new_status}."

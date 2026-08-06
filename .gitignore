@@ -17,3 +17,9 @@ my_sdk/
 # DevDNA logs & cache
 devdna.log
 devdna-cache/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

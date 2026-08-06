@@ -147,3 +147,57 @@ def generate(
 
     console.print(f"[bold green]SDK generated at[/bold green] {path}")
     console.print(f"[dim]Install:[/dim] [cyan]pip install -e {path}[/cyan]")
+    
+
+@app.command()
+def status() -> None:
+    """
+    Show the current status of the DevDNA memory store.
+    """
+    store = MemoryStore()
+     # Global pattern stats
+    stats = store.get_stats()
+    console.print("\n[bold]Pattern Library[/bold]")
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Status", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_row("Total", str(stats["total_patterns"]))
+    table.add_row("Pending Review", Text(str(stats["pending"]), style="yellow"))
+    table.add_row("Accepted", Text(str(stats["accepted"]), style="green"))
+    table.add_row("Rejected", Text(str(stats["rejected"]), style="red"))
+    console.print(table)
+
+    # Recent syncs
+    recent = store.get_recent_syncs(limit=5)
+    if recent:
+        console.print("\n[bold]Recent Syncs[/bold]")
+        sync_table = Table(show_header=True, header_style="dim")
+        sync_table.add_column("When", style="dim")
+        sync_table.add_column("Path", style="cyan")
+        sync_table.add_column("Functions", justify="right")
+        sync_table.add_column("Patterns", justify="right")
+        sync_table.add_column("Proposals", justify="right")
+
+        for row in recent:
+            status_icon = "✓" if row["completed_at"] else "…"
+            sync_table.add_row(
+                f"{status_icon} {row['started_at'][:19]}",
+                str(Path(row["root_path"]).name),
+                str(row["functions_found"]),
+                str(row["patterns_detected"]),
+                str(row["proposals_generated"]),
+            )
+        console.print(sync_table)
+
+    # Next step hint
+    if stats["pending"] > 0:
+        console.print(f"\n[green]→[/green] Run [cyan]devdna review[/cyan] for {stats['pending']} pending proposal(s).")
+    elif stats["accepted"] > 0:
+        console.print(f"\n[green]→[/green] Run [cyan]devdna generate[/cyan] to build your SDK.")
+
+def main() -> None:
+    app()
+
+
+if __name__ == "__main__":
+    main()

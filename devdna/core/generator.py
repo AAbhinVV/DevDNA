@@ -8,11 +8,14 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 import os
 from pathlib import Path
 from typing import List, Dict, Optional
 from jinja2 import Environment, FileSystemLoader, BaseLoader, DictLoader, TemplateNotFound, select_autoescape
 from jinja2.sandbox import SandboxedEnvironment
+
+from devdna.core.memory import StoredPattern
 
 _PYPROJECT_TEMPLATE = """\
 [build-system]
@@ -99,4 +102,80 @@ class SDKGenerator:
         self.version = version
 
         #sandboxed
-        self.env = SandboxedEnvironment()
+        self.env = SandboxedEnvironment(
+            loader = DictLoader({
+                "pyproject.toml": _PYPROJECT_TEMPLATE,
+                "README.md": _README_TEMPLATE,
+                "module.py": _MODULE_TEMPLATE,
+                "__init__.py": _INIT_TEMPLATE,
+            }),
+            autoescape = False
+        )
+
+    def generate(self, patterns: List[StoredPattern]) -> None:
+        # Value error if no patterns provided
+
+        if not patterns:
+            raise ValueError("No accepted patterns provided. Run `devdna review` first.")
+
+        modules: Dict[str, List[StoredPattern]] = defaultdict(list)
+        for pattern in patterns:
+            modules[self._sanitize_module(pattern.suggested_module)].append(pattern)
+
+        # directory tree
+        pkg_dir = self.output_dir / self.package_name
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- Project-level files ---
+        (self.output_dir / "pyproject.toml").write_text(
+            self.env.get_template("pyproject.toml").render(
+                package_name=self.package_name,
+                version=self.version,
+            ),
+            encoding="utf-8",
+        )
+
+        (self.output_dir / "README.md").write_text(
+            self.env.get_template("README.md").render(
+                package_name=self.package_name,
+                modules=modules,
+                output_path=self.output_dir,
+            ),
+            encoding="utf-8",
+        )
+
+        # --- Package-level files ---
+        exports: List[str] = []
+        for module_name, module_patterns in sorted(modules.items()):
+            (pkg_dir / f"{module_name}.py").write_text(
+                self.env.get_template("module.py").render(
+                    module_name=module_name,
+                    patterns=module_patterns,
+                ),
+                encoding="utf-8",
+            )
+            exports.extend(p.function_name for p in module_patterns)
+
+        (pkg_dir / "__init__.py").write_text(
+            self.env.get_template("__init__.py").render(
+                package_name=self.package_name,
+                modules=list(modules.keys()),
+                exports=sorted(set(exports)),
+            ),
+            encoding="utf-8",
+        )
+
+        return self.output_dir
+
+    @staticmethod
+    def _sanitize_module(module_name: str) -> str:
+        cleaned = module_name.lower().strip()
+        for char in ["-", " ", "."]:
+            cleaned = cleaned.replace(char, "_")
+        cleaned = "".join(
+            c if c.isalnum() or c == "_" else "_" for c in cleaned
+        )
+        while "__" in cleaned:
+            cleaned = cleaned.replace("__", "_")
+        return cleaned.strip("_")
+

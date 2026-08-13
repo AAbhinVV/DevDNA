@@ -127,11 +127,12 @@ class TestClusterByStructure:
 
     def test_sorting_high_first(self):
         """High confidence clusters come first."""
-        # Low confidence cluster (2 blocks, 1 file)
-        low = [CodeBlock("def f(): pass", Path("a.py"), "f", 1) for _ in range(2)]
-        # High confidence cluster (10 blocks, 5 files)
+        # Low confidence cluster (2 blocks, 1 file) — different structure
+        low = [CodeBlock("def f(): return 0", Path("a.py"), "f", 1) for _ in range(2)]
+        # High confidence cluster (10 blocks, 5 files) — different structure
         high = [CodeBlock("def g(): pass", Path(f"{i%5}.py"), "g", 1) for i in range(10)]
         clusters = cluster_by_structure(low + high, min_cluster_size=2)
+        assert len(clusters) == 2
         assert clusters[0].confidence_label == "High"
         assert clusters[1].confidence_label == "Low"
 
@@ -158,7 +159,7 @@ class TestAnalyzePatterns:
             CodeBlock(f"def f{i}(): return x + {i}", Path(f"{i}.py"), f"f{i}", 1)
             for i in range(100)
         ]
-        clusters = analyze_patterns(blocks, min_cluster_size=1, max_clusters=5)
+        clusters = analyze_patterns(blocks, min_cluster_size=1, max_cluster=5)
         assert len(clusters) <= 5
 
     def test_filters_by_min_cluster_size(self):
@@ -166,7 +167,7 @@ class TestAnalyzePatterns:
         b1 = CodeBlock("def a(): pass", Path("a.py"), "a", 1)
         b2 = CodeBlock("def b(): pass", Path("b.py"), "b", 1)
         b3 = CodeBlock("def c(): return 1", Path("c.py"), "c", 1)
-        clusters = analyze_patterns([b1, b2, b3], min_cluster_size=2, max_clusters=50)
+        clusters = analyze_patterns([b1, b2, b3], min_cluster_size=2, max_cluster=50)
         # a and b are identical structure, c is alone
         assert len(clusters) == 1
 

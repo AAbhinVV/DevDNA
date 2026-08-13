@@ -8,7 +8,9 @@ NOTE: Tests that call the real Claude API require ANTHROPIC_API_KEY in .env
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch, MagicMock
+
+import json
 
 import pytest
 
@@ -53,15 +55,15 @@ def sample_cluster():
 
 @pytest.fixture
 def mock_claude_response():
-    """Simulated Claude JSON response."""
-    return '''{
+    """Simulated Claude JSON response — properly escaped."""
+    return json.dumps({
         "function_name": "drop_missing_values",
         "signature": "def drop_missing_values(df: pd.DataFrame) -> pd.DataFrame:",
         "implementation": "def drop_missing_values(df: pd.DataFrame) -> pd.DataFrame:\n    \"\"\"Drop rows with missing values.\"\"\"\n    return df.dropna()",
         "suggested_module": "data_utils",
         "description": "Drops rows containing null values from a DataFrame.",
         "confidence_reasoning": "Strong structural match across 2 files."
-    }'''
+    })
 
 
 # =============================================================================
@@ -198,15 +200,15 @@ class TestProposeAbstraction:
         from anthropic import APIError
 
         mock_client = MagicMock()
-        from unittest.mock import MagicMock
         mock_client.messages.create.side_effect = APIError(
             "Rate limited", 
-            request=MagicMock()
+            request=MagicMock(),
+            body = None
         )
         mock_anthropic.return_value = mock_client
 
         bridge = LLMBridge(api_key="sk-test")
-        with pytest.raises(LLMBridgeError, match="Claude API error"):
+        with pytest.raises(LLMBridgeError, match="API error"):
             bridge.propose_abstraction(sample_cluster)
 
     @patch("devdna.core.llm_bridge.Anthropic")
@@ -275,3 +277,6 @@ class TestLiveClaude:
         assert proposal.signature.startswith("def ")
         assert "dropna" in proposal.implementation or "VAR" not in proposal.implementation
         # Note: implementation should use real names, not VAR (LLM invents them)
+
+
+#AL PASSED

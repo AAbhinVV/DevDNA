@@ -156,7 +156,7 @@ Rules:
         try:
             message = self.client.messages.create(
                 model = self.model,
-                mex_tokens = self.MAX_TOKENS,
+                max_tokens = self.MAX_TOKENS,
                 temperature = 0.2,# Low = deterministic, repeatable abstractions
                 messages = [{"role": "user", "content": prompt}]
             )
@@ -168,7 +168,7 @@ Rules:
             raise LLMBridgeError(f"Unexpected Claude error: {e}")
 
         if not message.content or not message.content[0].text:
-            raise LLMBridgeError("Claude returned empty response.")
+            raise LLMBridgeError("Claude returned empty content.")
 
         return message.content[0].text.strip()
 

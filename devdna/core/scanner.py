@@ -43,6 +43,8 @@ class CodeBlock:
             for node in ast.walk(tree):
                 if isinstance(node, ast.Name):
                     node.id = 'VAR'
+                elif isinstance(node, ast.arg):
+                    node.arg = 'ARG'
                 elif isinstance(node, ast.Constant):
                     if isinstance(node.value, str):
                         node.value = "STR"
@@ -51,6 +53,9 @@ class CodeBlock:
             return ast.unparse(tree)  # <-- AFTER loop, not inside
         except (SyntaxError, ValueError):
             return ""
+
+    def __repr__(self) -> str:
+        return f"CodeBlock(func_name={self.func_name}, filepath={self.filepath}, lineno={self.lineno})"
 
 
 def scan_directory(

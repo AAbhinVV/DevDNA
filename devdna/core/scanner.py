@@ -45,12 +45,16 @@ class CodeBlock:
                     node.id = 'VAR'
                 elif isinstance(node, ast.arg):
                     node.arg = 'ARG'
+                elif isinstance(node, ast.keyword):
+                    node.keyword = 'VAR'
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    node.name = 'FUNC'
                 elif isinstance(node, ast.Constant):
                     if isinstance(node.value, str):
                         node.value = "STR"
                     elif isinstance(node.value, (int, float)):
                         node.value = 0
-            return ast.unparse(tree)  # <-- AFTER loop, not inside
+            return ast.unparse(tree)
         except (SyntaxError, ValueError):
             return ""
 

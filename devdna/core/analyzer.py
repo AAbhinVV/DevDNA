@@ -173,9 +173,9 @@ def analyze_patterns(
 
 def get_cluster_stats(clusters: List[PatternCluster]) -> dict:
     '''stats about found patterns for reporting'''
-    high = sum(1 for c in clusters if c.confidence == "High")
-    medium = sum(1 for c in clusters if c.confidence == "Medium")
-    low = sum(1 for c in clusters if c.confidence == "Low")
+    high = sum(1 for c in clusters if c.confidence_label == "High")
+    medium = sum(1 for c in clusters if c.confidence_label == "Medium")
+    low = sum(1 for c in clusters if c.confidence_label == "Low")
 
     return {
         "total_clusters": len(clusters),

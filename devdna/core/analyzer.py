@@ -8,7 +8,7 @@ from devdna.core.scanner import CodeBlock
 class PatternCluster:
 
     HIGH_THRESHOLD  =(10,5)
-    MEIDUM_THRESHOLD=(5,3)
+    MEDIUM_THRESHOLD=(5,3)
 
     def __init__(self, struct_hash: str):
         self.struct_hash = struct_hash

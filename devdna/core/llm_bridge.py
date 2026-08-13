@@ -28,7 +28,7 @@ class PatternCluster:
     code_blocks: List[CodeBlock]
     confidence_score: float
     source_file_count: int
-    unqiue_file_count: int
+    unique_file_count: int
 
     def top_examples(self, n: int = 3) -> List[CodeBlock]:
         return self.code_blocks[:n]
@@ -103,7 +103,7 @@ class LLMBridge:
     def _build_prompt(self, cluster: PatternCluster) -> str:
         examples = cluster.top_examples(3)
 
-        example_blocks = List[str] = []
+        example_blocks: List[str] = []
         for idx, block in enumerate(examples):
             example_blocks.append(f"### Example {idx} (from {block.filepath.name})\n"
                 f"```python\n{block.normalized}\n```")

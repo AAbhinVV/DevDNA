@@ -198,7 +198,11 @@ class TestProposeAbstraction:
         from anthropic import APIError
 
         mock_client = MagicMock()
-        mock_client.messages.create.side_effect = APIError("Rate limited")
+        from unittest.mock import MagicMock
+        mock_client.messages.create.side_effect = APIError(
+            "Rate limited", 
+            request=MagicMock()
+        )
         mock_anthropic.return_value = mock_client
 
         bridge = LLMBridge(api_key="sk-test")

@@ -182,6 +182,6 @@ def get_cluster_stats(clusters: List[PatternCluster]) -> dict:
         "high_confidence": high,
         "medium_confidence": medium,
         "low_confidence": low,
-        "total_blocks": sum(c.source_file_count for c in clusters),
+        "total_blocks": sum(c.source_count for c in clusters),
         "total_unique_files": sum(c.unique_file_count for c in clusters),
     }

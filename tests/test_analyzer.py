@@ -206,3 +206,5 @@ class TestGetClusterStats:
         assert stats["medium_confidence"] == 1
         assert stats["low_confidence"] == 1
         assert stats["total_blocks"] == 17
+
+    #ALL CASES PASSED

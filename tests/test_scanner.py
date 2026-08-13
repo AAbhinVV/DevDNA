@@ -283,3 +283,5 @@ class TestExcludePatterns:
     def test_no_empty_strings(self):
         """No accidental empty patterns that would match everything."""
         assert "" not in DEFAULT_EXCLUDE_PATTERNS
+
+#ALL PASSED

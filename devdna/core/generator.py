@@ -77,22 +77,21 @@ _MODULE_TEMPLATE = '''
     {%endfor%}
 '''
 
-_INIT_TEMPLATE = '''
-    """
-    {{ package_name |title }} - Auto-generated DevDNA SDK.
+_INIT_TEMPLATE = """\
+\"\"\"
+{{ package_name | title }} -- Auto-generated DevDNA SDK.
+\"\"\"
 
-    """
+{% for module in modules %}
+from .{{ module }} import *
+{% endfor %}
 
-    {%for module, in modules%}
-        from .{{ module }} import *
-    {%endfor%}
-
-    all = [
-    {%for name in exports%}
-        "{{ name }}",
-    {%endfor%}
-    ]
-'''
+__all__ = [
+{% for name in exports %}
+    "{{ name }}",
+{% endfor %}
+]
+"""
 
 
 class SDKGenerator:
@@ -112,7 +111,7 @@ class SDKGenerator:
             autoescape = False
         )
 
-    def generate(self, patterns: List[StoredPattern]) -> None:
+    def generate(self, patterns: List[StoredPattern]) -> Path:
         # Value error if no patterns provided
 
         if not patterns:

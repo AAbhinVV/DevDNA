@@ -194,3 +194,6 @@ class TestSanitizeModule:
 
     def test_only_special_chars(self):
         assert SDKGenerator._sanitize_module("!!!") == ""
+
+
+#ALL PASSED

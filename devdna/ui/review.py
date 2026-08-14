@@ -9,6 +9,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+
 from devdna.core.memory import MemoryStore, StoredPattern
 
 class ReviewUI:
@@ -30,7 +31,7 @@ class ReviewUI:
             f"[bold]Found {len(pending_patterns)} proposal(s) to review.[/bold]\n"
         )
 
-        stats = {"accepted": 0, "rejected": 0, "skipped": 0}
+        stats = {"accepted": 0, "rejected": 0, "skipped": 0, "reviewed": 0}
 
         for idx, pattern in enumerate(pending_patterns, 1):
             decision = self._review_single(pattern, idx, len(pending_patterns))
@@ -39,11 +40,14 @@ class ReviewUI:
                 case "accept":
                     self.store.accept(pattern.id)
                     stats["accepted"] += 1
+                    stats["reviewed"] += 1
                 case "reject":
                     self.store.reject(pattern.id)
                     stats["rejected"] += 1
+                    stats["reviewed"] += 1
                 case "skip":
                     stats["skipped"] += 1
+                    stats["reviewed"] += 1
                 case "quit":
                     break
                  

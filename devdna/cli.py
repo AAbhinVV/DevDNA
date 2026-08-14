@@ -8,6 +8,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from devdna.core.analyzer import analyze_patterns
 from devdna.core.generator import SDKGenerator

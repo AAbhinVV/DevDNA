@@ -23,3 +23,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# DevDNA generated SDKs
+test_sdk/
+devdna_sdk/
+*.egg-info/

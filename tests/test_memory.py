@@ -21,7 +21,7 @@ from devdna.core.memory import MemoryStore, StoredPattern
 def store(tmp_path):
     """Fresh in-memory store for each test."""
     db = tmp_path / "test.db"
-    return MemoryStore(db_path=db)
+    return MemoryStore(dbPath=db)
 
 
 @pytest.fixture
@@ -50,12 +50,12 @@ class TestSchema:
         """Store creation makes the DB file."""
         db = tmp_path / "new.db"
         assert not db.exists()
-        MemoryStore(db_path=db)
+        MemoryStore(dbPath=db)
         assert db.exists()
 
     def test_creates_tables(self, store):
         """Tables exist after init."""
-        with sqlite3.connect(store.db_path) as conn:
+        with sqlite3.connect(store.dbPath) as conn:
             tables = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()

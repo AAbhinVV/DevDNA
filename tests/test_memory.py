@@ -213,7 +213,7 @@ class TestStatusTransitions:
 class TestSyncHistory:
     """Tests for audit trail."""
 
-    def test_log_sync_start_returns_id(self, store):
+    def test_log_sync_returns_id(self, store):
         """Returns integer sync ID."""
         sid = store.log_sync(Path("/test"))
         assert isinstance(sid, int)
@@ -221,7 +221,7 @@ class TestSyncHistory:
 
     def test_log_sync_complete_success(self, store):
         """Returns (True, message) on valid ID."""
-        sid = store.log_sync_start(Path("/test"))
+        sid = store.log_sync(Path("/test"))
         ok, msg = store.log_sync_complete(sid, 10, 3, 2)
         assert ok is True
         assert str(sid) in msg
@@ -235,14 +235,14 @@ class TestSyncHistory:
 
     def test_get_recent_syncs(self, store):
         """Returns sync history ordered by time."""
-        sid1 = store.log_sync_start(Path("/a"))
+        sid1 = store.log_sync(Path("/a"))
         store.log_sync_complete(sid1, 5, 2, 1)
-        sid2 = store.log_sync_start(Path("/b"))
+        sid2 = store.log_sync(Path("/b"))
         store.log_sync_complete(sid2, 10, 4, 3)
 
         recent = store.get_recent_syncs(limit=5)
         assert len(recent) == 2
-        assert recent[0]["root_path"] == "/b"  # newest first
+        assert recent[0]["root_path"] == str(Path("/b")) # newest first
 
 
 # =============================================================================

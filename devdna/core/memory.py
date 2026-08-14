@@ -107,18 +107,21 @@ class MemoryStore:
             "example_count",
         }
 
-        if not proposal.get("function_name", "").strip():
-            raise ValueError("function_name cannot be empty")
-
+        # 1. Check missing fields FIRST
         missing = required - set(proposal.keys())
         if missing:
             raise ValueError(f"missing required fields")
 
+        # 2. THEN check field validity
+        if not proposal["function_name"].strip():
+            raise ValueError("function_name cannot be empty")
+
+        if not isinstance(proposal["example_count"], int) or proposal["example_count"] < 0:
+            raise ValueError("example_count must be a non-negative integer")
+
+        # 3. Skip duplicates
         if skip_duplicates and self._hash_exists(proposal["source_hash"]):
             return None
-
-        if not isinstance(proposal.get("example_count", 0), int) or proposal["example_count"] < 0:
-            raise ValueError("example_count must be a non-negative integer")
 
         sql = """
             INSERT INTO patterns (

@@ -93,13 +93,13 @@ class TestSaveProposal:
     def test_raises_on_empty_function_name(self, store, sample_proposal):
         """Empty function_name raises ValueError."""
         sample_proposal["function_name"] = ""
-        with pytest.raises(ValueError, match="cannot be empty"):
+        with pytest.raises(ValueError, match="function_name cannot be empty"):
             store.save_proposal(sample_proposal)
 
     def test_raises_on_negative_example_count(self, store, sample_proposal):
         """Negative count raises ValueError."""
         sample_proposal["example_count"] = -1
-        with pytest.raises(ValueError, match="non-negative"):
+        with pytest.raises(ValueError, match="example_count must be a non-negative integer"):
             store.save_proposal(sample_proposal)
 
     def test_uses_default_module(self, store, sample_proposal):
@@ -215,7 +215,7 @@ class TestSyncHistory:
 
     def test_log_sync_start_returns_id(self, store):
         """Returns integer sync ID."""
-        sid = store.log_sync_start(Path("/test"))
+        sid = store.log_sync(Path("/test"))
         assert isinstance(sid, int)
         assert sid > 0
 

@@ -100,19 +100,25 @@ class MemoryStore:
         Returns the ID of the inserted record.
         """
         required = {
-             "function_name",
+            "function_name",
             "signature",
             "implementation",
             "source_hash",
             "example_count",
         }
 
+        if not proposal.get("function_name", "").strip():
+            raise ValueError("function_name cannot be empty")
+
         missing = required - set(proposal.keys())
         if missing:
-            raise ValueError(f"Missing required fields: {missing}")
+            raise ValueError(f"missing required fields")
 
         if skip_duplicates and self._hash_exists(proposal["source_hash"]):
             return None
+
+        if not isinstance(proposal.get("example_count", 0), int) or proposal["example_count"] < 0:
+            raise ValueError("example_count must be a non-negative integer")
 
         sql = """
             INSERT INTO patterns (
@@ -182,10 +188,10 @@ class MemoryStore:
 
     def update_status(self, pattern_id: int, new_status: str) -> tuple[bool, str]:
         if new_status not in self.STATUSES:
-            raise ValueError(f"Invalid status: {new_status}, use one of {self.STATUSES}")
+            return False, f"Invalid status: {new_status}, use one of {self.STATUSES}"
 
         if new_status == "proposed":
-            raise ValueError("Cannot manually set status to 'proposed', use 'accepted' or 'rejected'")
+            return False, "Cannot manually set status to 'proposed', use 'accepted' or 'rejected'"
 
         with sqlite3.connect(self.dbPath) as conn:
             conn.row_factory = sqlite3.Row
@@ -202,11 +208,11 @@ class MemoryStore:
             conn.commit()
             return True, f"Pattern '{row['function_name']}' updated to {new_status}."
 
-    def accept(self, pattern_id: int) -> None:
-        self.update_status(pattern_id, "accepted")
+    def accept(self, pattern_id: int) -> tuple[bool, str]:
+        return self.update_status(pattern_id, "accepted")
 
-    def reject(self, pattern_id: int) -> None:
-        self.update_status(pattern_id, "rejected")
+    def reject(self, pattern_id: int) -> tuple[bool, str]:
+        return self.update_status(pattern_id, "rejected")
 
 
     def log_sync(self, root_path: str) -> None:

@@ -46,15 +46,15 @@ class MemoryStore:
     STATUSES = ("proposed", "accepted", "rejected")
 
     def __init__(self, dbPath: Optional[Path] = None) -> None:
-        if db_path is None:
-            db_path = Path.home() / ".devdna" / "devdna.db"
+        if dbPath is None:
+            dbPath = Path.home() / ".devdna" / "devdna.db"
 
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.dbPath = dbPath
+        self.dbPath.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
     def _init_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS patterns (
@@ -135,14 +135,14 @@ class MemoryStore:
             self._now(),
         )
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             cursor = conn.execute(sql, params)
             conn.commit()
             return cursor.lastrowid
 
     def _hash_exists(self, source_hash: str) -> bool:
         sql = "SELECT 1 FROM patterns WHERE source_hash = ? LIMIT 1"
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             cursor = conn.execute(sql, (source_hash,)).fetchone()
             return cursor is not None
 
@@ -169,7 +169,7 @@ class MemoryStore:
             LIMIT ?
         """
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(sql, (status, limit)).fetchall()
             return [self._row_to_pattern(row) for row in rows]
@@ -187,7 +187,7 @@ class MemoryStore:
         if new_status == "proposed":
             raise ValueError("Cannot manually set status to 'proposed', use 'accepted' or 'rejected'")
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT function_name FROM patterns WHERE id = ?", (pattern_id,)
@@ -211,7 +211,7 @@ class MemoryStore:
 
     def log_sync(self, root_path: str) -> None:
         sql = "INSERT INTO sync_history (root_path, started_at) VALUES (?, ?)"
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             cursor = conn.execute(sql, (str(root_path), self._now()))
             conn.commit()
             return cursor.lastrowid
@@ -232,7 +232,7 @@ class MemoryStore:
             completed_at = ?
         WHERE id = ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             cursor = conn.execute(
                 sql,
                 (
@@ -269,14 +269,14 @@ class MemoryStore:
             ORDER BY started_at DESC
             LIMIT ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(sql, (limit,)).fetchall()
             return [dict(row) for row in rows]
 
 
     def get_stats(self) -> Dict[str, Any]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.dbPath) as conn:
             cursor = conn.execute(
                 """
                 SELECT

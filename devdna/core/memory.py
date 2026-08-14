@@ -187,16 +187,20 @@ class MemoryStore:
         if new_status == "proposed":
             raise ValueError("Cannot manually set status to 'proposed', use 'accepted' or 'rejected'")
 
-        sql = """
-            UPDATE patterns
-            SET status = ?, reviewed_at = ?
-            WHERE id = ?
-        """
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(sql, (new_status, self._now(), pattern_id))
-            conn.commit()
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT function_name FROM patterns WHERE id = ?", (pattern_id,)
+            ).fetchone()
+            if not row:
+                return False, f"Pattern #{pattern_id} not found."
 
-        return True, f"Pattern '{row_name}' updated to {new_status}."
+            conn.execute(
+                "UPDATE patterns SET status = ?, reviewed_at = ? WHERE id = ?",
+                (new_status, self._now(), pattern_id)
+            )
+            conn.commit()
+            return True, f"Pattern '{row['function_name']}' updated to {new_status}."
 
     def accept(self, pattern_id: int) -> None:
         self.update_status(pattern_id, "accepted")

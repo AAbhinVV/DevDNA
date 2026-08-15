@@ -7,6 +7,7 @@ import ast
 import hashlib
 from pathlib import Path
 from typing import List, Optional, Set
+from devdna.config import config
 
 
 DEFAULT_EXCLUDE_PATTERNS = {

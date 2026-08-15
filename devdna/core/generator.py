@@ -197,6 +197,7 @@ class SDKGenerator:
             self.env.get_template("pyproject.toml").render(
                 package_name=self.package_name,
                 version=self.version,
+                dependencies=third_party_deps
             ),
             encoding="utf-8",
         )

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Set
+from typing import Optional, Set, FrozenSet, Tuple
 
 from dotenv import load_dotenv
 
@@ -41,15 +41,48 @@ class Config:
     # ------------------------------------------------------------------
     # Scanner
     # ------------------------------------------------------------------
+    scan_root: Path = field(default_factory=lambda: Path("."))
+    source_extensions: Tuple[str, ...] = ("*.py",)
+    source_encoding: str = "utf-8"
+
+    exclude_patterns: FrozenSet[str] = field(default_factory=frozenset({
+        '.venv', 'venv', 'env', 'virtualenv',
+        '__pycache__', '.pytest_cache', '.mypy_cache', '.tox', '.egg-info',
+        '.git', '.hg', '.svn',
+        'node_modules', 'vendor', '.bundle',
+        '.idea', '.vscode', '.vim',
+        'build', 'dist', 'target', 'out', 'site-packages',
+        'docs/_build', '_build', 'htmlcov', '.coverage',
+        '.env', '.env.local', '.env.dev', '.env.staging', '.env.production',
+        '.envrc', '.flaskenv', '.djangoenv',
+        'secrets', 'credentials', 'keys', 'private', '.ssh', '.gnupg',
+        'fixtures', 'testdata', 'test_data', 'sample_data',
+        'tmp', 'temp', '.tmp', '.temp', 'cache', '.cache',
+        '.DS_Store', 'Thumbs.db', 'desktop.ini',
+        'logs', 'log',
+        '.github', '.gitlab-ci', '.circleci',
+    }))
+
+    struct_hash_length: int = 16
+
+    normalization_tokens: dict[str, str] = field(default_factory=lambda: {
+        "name": "VAR",
+        "arg": "ARG",
+        "keyword": "VAR",
+        "func_name": "FUNC",
+        "string": "STR",
+        "number": "0",
+    })
+
+    # ------------------------------------------------------------------
+    # Analyzer
+    # ------------------------------------------------------------------
     min_cluster_size: int = 2
     max_clusters: int = 50
 
-    # ------------------------------------------------------------------
-    # Analyzer — Confidence Thresholds
-    # ------------------------------------------------------------------
     # (min_occurrences, min_unique_files)
-    high_confidence_threshold: tuple[int, int] = (10, 5)
-    medium_confidence_threshold: tuple[int, int] = (5, 3)
+    high_confidence_threshold: Tuple[int, int] = (10, 5)
+    medium_confidence_threshold: Tuple[int, int] = (5, 3)
 
     # ------------------------------------------------------------------
     # LLM Bridge
@@ -69,6 +102,17 @@ class Config:
     # Security
     # ------------------------------------------------------------------
     db_file_permissions: int = 0o600  # Not enforced on Windows
+    max_file_size_bytes: int = 5 * 1024 * 1024  # 5 MB
+    max_ast_nodes: int = 50_000
+
+    # ------------------------------------------------------------------
+    # Post-MVP placeholders
+    # ------------------------------------------------------------------
+    comment_strip_patterns: Tuple[str, ...] = (
+        r"#.*",           # inline comments
+        r"\"\"\"[\s\S]*?\"\"\"",  # docstrings
+        r"'''[\s\S]*?'''",         # docstrings
+    )
 
     def __post_init__(self) -> None:
         # Resolve API key from env if not provided

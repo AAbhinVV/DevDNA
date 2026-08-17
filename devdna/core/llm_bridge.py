@@ -2,6 +2,7 @@ from typing import List, Dict, Optional, Any
 import json
 import os
 from dataclasses import dataclass
+from devdna.config import config
 
 
 
@@ -52,17 +53,16 @@ class LLMBridgeError(Exception):
 class LLMBridge: 
     '''one cluster per api call, temp 0.2, json-over-text, normalized code in prompts'''
 
-    DEFAULT_MODEL = "claude-sonnet-4-25250514"
-    MAX_TOKENS = 4096
+    
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         if Anthropic is None:
             raise LLMBridgeError("Anthropic package not installed. Run: pip install anthropic>=0.30.0")
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.api_key = api_key or config.anthropic_api_key
         if not self.api_key:
             raise LLMBridgeError("Anthropic API key not provided. Set the 'ANTHROPIC_API_KEY' environment variable or pass it to the constructor.")
 
-        self.model = model or self.DEFAULT_MODEL
+        self.model = model or config.llm_model
         self.client = Anthropic(api_key=self.api_key)
 
 
@@ -155,9 +155,9 @@ Rules:
     def _call_claude(self, prompt: str) -> str:
         try:
             message = self.client.messages.create(
-                model = self.model,
-                max_tokens = self.MAX_TOKENS,
-                temperature = 0.2,# Low = deterministic, repeatable abstractions
+                model = config.llm_model,
+                max_tokens = config.llm_max_tokens,
+                temperature = config.llm_temperature,# Low = deterministic, repeatable abstractions
                 messages = [{"role": "user", "content": prompt}]
             )
         except APITimeoutError as e:

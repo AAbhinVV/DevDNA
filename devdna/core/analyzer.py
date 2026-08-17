@@ -4,6 +4,7 @@ from typing import List, Dict, Optional, Set
 from pathlib import Path
 from collections import defaultdict
 from devdna.core.scanner import CodeBlock
+from devdna.config import config
 
 class PatternCluster:
 
@@ -32,10 +33,10 @@ class PatternCluster:
 
         count = len(self.blocks)
         unique_files = len(self._source_files)
-        if count>=self.HIGH_THRESHOLD[0] and unique_files>=self.HIGH_THRESHOLD[1]:
+        if count>=config.high_confidence_threshold[0] and unique_files>=config.high_confidence_threshold[1]:
             self._confidence_label = "High"
             self._confidence_score = 0.9
-        elif count>=self.MEDIUM_THRESHOLD[0] and unique_files>=self.MEDIUM_THRESHOLD[1]:
+        elif count>=config.medium_confidence_threshold[0] and unique_files>=config.medium_confidence_threshold[1]:
             self._confidence_label = "Medium"
             self._confidence_score = 0.6
         else:
@@ -164,7 +165,7 @@ def analyze_patterns(
         >>> print(f"Found {len(top_patterns)} significant patterns")
     """
 
-    clusters = cluster_by_structure(blocks, min_cluster_size)
+    clusters = cluster_by_structure(blocks, config.min_cluster_size)
 
     #top N clusters
     #priority high confidence fist then largest

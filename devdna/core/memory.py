@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from devdna.config import config
 
 @dataclass
 class StoredPattern:
@@ -47,7 +48,7 @@ class MemoryStore:
 
     def __init__(self, dbPath: Optional[Path] = None) -> None:
         if dbPath is None:
-            dbPath = Path.home() / ".devdna" / "devdna.db"
+            dbPath = config.db_path
 
         self.dbPath = dbPath
         self.dbPath.parent.mkdir(parents=True, exist_ok=True)

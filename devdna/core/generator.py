@@ -20,6 +20,7 @@ from jinja2.sandbox import SandboxedEnvironment
 from jinja2 import DictLoader
 
 from devdna.core.memory import StoredPattern
+from devdna.config import config
 
 
 # =============================================================================
@@ -148,12 +149,12 @@ class SDKGenerator:
 
     def __init__(
         self,
-        package_name: str = "devdna_sdk",
+        package_name: str = config.default_package_name,
         output_dir: Optional[Path] = None,
-        version: str = "0.1.0",
+        version: str = config.default_version,
     ) -> None:
         self.package_name = package_name
-        self.output_dir = output_dir or Path.home() / ".devdna" / "sdk"
+        self.output_dir = output_dir or config.sdk_output_dir
         self.version = version
 
         # Sandboxed: LLM output is untrusted until human review

@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from devdna.config import config
 from devdna.core.analyzer import analyze_patterns
 from devdna.core.generator import SDKGenerator
 from devdna.core.llm_bridge import LLMBridge
@@ -36,13 +37,13 @@ def sync(
         resolve_path=True,
         ),
         min_cluster_size: int = typer.Option(
-            2,
+            config.min_cluster_size,
             "--min-cluster",
             "-m",
             help="Minimum occurrences to form a pattern cluster.",
         ),
         max_clusters: int = typer.Option(
-            50,
+            config.max_clusters,
             "--max-clusters",
             "-n",
             help="Maximum patterns to send to LLM.",
@@ -109,7 +110,7 @@ def review() -> None:
 @app.command()
 def generate(
     package_name: str = typer.Option(
-        "devdna_sdk",
+        config.default_package_name,
         "--name",
         "-n",
         help="Name of the generated Python package.",
@@ -121,7 +122,7 @@ def generate(
         help="Directory to write the SDK. Defaults to ~/.devdna/sdk",
     ),
     version: str = typer.Option(
-        "0.1.0",
+        config.default_version,
         "--version",
         "-v",
         help="SDK version string.",

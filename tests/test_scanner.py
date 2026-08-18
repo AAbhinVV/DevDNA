@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from devdna.core.scanner import CodeBlock, scan_directory, extract_functions, DEFAULT_EXCLUDE_PATTERNS
+from devdna.config import config
+from devdna.core.scanner import CodeBlock, scan_directory, extract_functions
 
 
 # =============================================================================
@@ -263,7 +264,7 @@ class TestScanDirectory:
 
 
 # =============================================================================
-# DEFAULT_EXCLUDE_PATTERNS Tests
+# exclude_patterns Tests
 # =============================================================================
 
 class TestExcludePatterns:
@@ -271,17 +272,17 @@ class TestExcludePatterns:
 
     def test_common_venvs_present(self):
         """venv variants are excluded."""
-        assert ".venv" in DEFAULT_EXCLUDE_PATTERNS
-        assert "venv" in DEFAULT_EXCLUDE_PATTERNS
-        assert "env" in DEFAULT_EXCLUDE_PATTERNS
+        assert ".venv" in config.exclude_patterns
+        assert "venv" in config.exclude_patterns
+        assert "env" in config.exclude_patterns
 
     def test_secrets_excluded(self):
         """Secret directories are excluded."""
-        assert ".env" in DEFAULT_EXCLUDE_PATTERNS
-        assert "secrets" in DEFAULT_EXCLUDE_PATTERNS
+        assert ".env" in config.exclude_patterns
+        assert "secrets" in config.exclude_patterns
 
     def test_no_empty_strings(self):
         """No accidental empty patterns that would match everything."""
-        assert "" not in DEFAULT_EXCLUDE_PATTERNS
+        assert "" not in config.exclude_patterns
 
 #ALL PASSED

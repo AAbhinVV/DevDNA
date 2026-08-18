@@ -154,17 +154,17 @@ class ReviewUI:
                         str(p.example_count),
                         preview,)
 
-            if len(remaining) > 5:
-                rem_table.add_row(
-                    "",
-                    f"… and {len(remaining) - 5} more",
-                    "",
-                    "",
-                    "",
-                    style="dim",
-                )
+                if len(remaining) > 5:
+                    rem_table.add_row(
+                        "",
+                        f"… and {len(remaining) - 5} more",
+                        "",
+                        "",
+                        "",
+                        style="dim",
+                    )
 
-            self.console.print(rem_table)
+                self.console.print(rem_table)
 
             #what next
             self.console.print()

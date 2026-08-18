@@ -53,7 +53,7 @@ def sync(
     Scan a codebase, detect patterns, and generate proposals via LLM.
     """
     store = MemoryStore()
-    sync_id = store.log_sync_start(path)
+    sync_id = store.log_sync(path)
 
     console.print(f"[bold cyan]Scanning[/bold cyan] {path} ...")
     blocks = scan_directory(path)

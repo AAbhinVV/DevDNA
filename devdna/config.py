@@ -45,7 +45,7 @@ class Config:
     source_extensions: Tuple[str, ...] = ("*.py",)
     source_encoding: str = "utf-8"
 
-    exclude_patterns: FrozenSet[str] = field(default_factory=frozenset({
+    exclude_patterns: FrozenSet[str] = field(default_factory=lambda: frozenset({
         '.venv', 'venv', 'env', 'virtualenv',
         '__pycache__', '.pytest_cache', '.mypy_cache', '.tox', '.egg-info',
         '.git', '.hg', '.svn',

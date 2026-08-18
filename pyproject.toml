@@ -5,10 +5,23 @@ build-backend = "hatchling.build"
 [project]
 name = "devdna"
 version = "0.1.0"
-description = "DevDNA — Turn your muscle memory into a reusable SDK"
+description = "Turn your coding patterns into a reusable SDK — powered by AI"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
+authors = [{name = "Abhinav", email = "your@email.com"}]
+keywords = ["developer-tools", "code-analysis", "sdk-generator", "ai", "patterns"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+]
 dependencies = [
     "anthropic>=0.30.0",
     "python-dotenv>=1.0.0",
@@ -16,6 +29,12 @@ dependencies = [
     "jinja2>=3.1.0",
     "typer>=0.12.0",
 ]
+
+[project.urls]
+Homepage = "https://devdna.dev"
+Repository = "https://github.com/AAbhinVV/DevDNA"
+Documentation = "https://devdna.dev/docs"
+"Bug Tracker" = "https://github.com/AAbhinVV/DevDNA/issues"
 
 [project.optional-dependencies]
 dev = [

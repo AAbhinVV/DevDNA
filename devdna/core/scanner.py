@@ -30,6 +30,8 @@ class CodeBlock:
                     node.keyword = tokens["keyword"]
                 elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     node.name = tokens["func_name"]
+                    if node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str):
+                        node.body.pop(0)
                 elif isinstance(node, ast.Constant):
                     if isinstance(node.value, str):
                         node.value = tokens["string"]
@@ -61,8 +63,11 @@ def scan_directory(
             if any(part.startswith('.') and part != '.' for part in py_file.parts):
                 continue
 
-            # skip oversized files
+            # skip oversized files and symlinks outside root
             try:
+                resolved = py_file.resolve()
+                if not resolved.is_relative_to(root.resolve()):
+                    continue
                 if py_file.stat().st_size > config.max_file_size_bytes:
                     continue
             except OSError:

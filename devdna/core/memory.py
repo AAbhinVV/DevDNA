@@ -52,6 +52,11 @@ class MemoryStore:
 
         self.dbPath = dbPath
         self.dbPath.parent.mkdir(parents=True, exist_ok=True)
+        if not self.dbPath.exists():
+            self.dbPath.touch()
+            import sys
+            if sys.platform != "win32":
+                self.dbPath.chmod(config.db_file_permissions)
         self._init_schema()
 
     def _init_schema(self) -> None:

@@ -78,7 +78,7 @@ class PatternCluster:
 
 def cluster_by_structure(
         blocks: List[CodeBlock],
-        min_cluster_size: int = 2
+        min_cluster_size: int = config.min_cluster_size
     ) -> List[ PatternCluster]:
     """
     Group CodeBlocks by structural similarity (exact hash match).
@@ -140,8 +140,8 @@ def cluster_by_structure(
 
 def analyze_patterns(
         blocks: List[CodeBlock],
-        min_cluster_size: int = 2,
-        max_cluster: int = 50
+        min_cluster_size: int = config.min_cluster_size,
+        max_cluster: int = config.max_clusters
     ) -> List[PatternCluster]:
     """
     High-level analysis function: cluster, filter, and rank patterns.

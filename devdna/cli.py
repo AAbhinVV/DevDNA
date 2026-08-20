@@ -14,6 +14,7 @@ from devdna.config import config
 from devdna.core.analyzer import analyze_patterns
 from devdna.core.generator import SDKGenerator
 from devdna.core.llm_bridge import LLMBridge
+from devdna.core.llm_anthropic import AnthropicProvider
 from devdna.core.memory import MemoryStore
 from devdna.core.scanner import scan_directory
 from devdna.ui.review import ReviewUI
@@ -74,7 +75,8 @@ def sync(
         return
 
     console.print("[bold cyan]Generating[/bold cyan] proposals via LLM ...")
-    bridge = LLMBridge()
+    provider = AnthropicProvider()
+    bridge = LLMBridge(provider)
     proposals = bridge.propose_batch(clusters)
 
     saved = 0

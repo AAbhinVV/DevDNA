@@ -20,6 +20,8 @@ from devdna.core.llm_bridge import (
     PatternCluster,
     PatternProposal,
 )
+from devdna.core.llm_anthropic import AnthropicProvider
+from devdna.core.llm_base import LLMProviderError
 from devdna.core.scanner import CodeBlock
 
 
@@ -74,20 +76,20 @@ class TestLLMBridgeInit:
     """Tests for constructor and validation."""
 
     def test_raises_without_api_key(self, monkeypatch):
-        """Missing API key raises LLMBridgeError."""
+        """Missing API key raises LLMProviderError."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        with pytest.raises(LLMBridgeError, match="ANTHROPIC_API_KEY"):
-            LLMBridge(api_key=None)
+        with pytest.raises(LLMProviderError, match="ANTHROPIC_API_KEY"):
+            AnthropicProvider(api_key=None)
 
     def test_accepts_explicit_api_key(self):
         """Explicit key bypasses env check."""
-        bridge = LLMBridge(api_key="sk-test-fake-key")
-        assert bridge.api_key == "sk-test-fake-key"
+        provider = AnthropicProvider(api_key="sk-test-fake-key")
+        assert provider.api_key == "sk-test-fake-key"
 
     def test_default_model_set(self):
         """Default model is Claude Sonnet."""
-        bridge = LLMBridge(api_key="sk-test")
-        assert "claude" in bridge.model.lower()
+        provider = AnthropicProvider(api_key="sk-test")
+        assert "claude" in provider.model.lower()
 
 
 # =============================================================================
@@ -99,7 +101,7 @@ class TestPromptBuilding:
 
     def test_prompt_contains_normalized_code_only(self, sample_cluster):
         """Prompt uses normalized code, never raw source."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         prompt = bridge._build_prompt(sample_cluster)
         assert "VAR" in prompt  # normalized variable names
         assert "df" not in prompt  # raw variable name should not appear
@@ -107,7 +109,7 @@ class TestPromptBuilding:
 
     def test_prompt_contains_cluster_metadata(self, sample_cluster):
         """Prompt includes hash, counts, confidence."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         prompt = bridge._build_prompt(sample_cluster)
         assert sample_cluster.struct_hash in prompt
         assert str(sample_cluster.source_file_count) in prompt
@@ -115,7 +117,7 @@ class TestPromptBuilding:
 
     def test_prompt_has_json_schema(self, sample_cluster):
         """Prompt specifies exact JSON output format."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         prompt = bridge._build_prompt(sample_cluster)
         assert "function_name" in prompt
         assert "signature" in prompt
@@ -123,7 +125,7 @@ class TestPromptBuilding:
 
     def test_prompt_requests_no_markdown(self, sample_cluster):
         """Prompt asks for raw JSON without markdown fences."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         prompt = bridge._build_prompt(sample_cluster)
         assert "No markdown" in prompt or "parseable JSON" in prompt
 
@@ -137,34 +139,34 @@ class TestResponseParsing:
 
     def test_parses_clean_json(self):
         """Valid JSON returns dict."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         raw = '{"function_name": "foo", "signature": "def foo():", "implementation": "def foo(): pass"}'
         result = bridge._parse_response(raw)
         assert result["function_name"] == "foo"
 
     def test_strips_markdown_fences(self):
         """JSON wrapped in ```json ... ``` is cleaned."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         raw = '```json\n{"function_name": "foo", "signature": "def foo():", "implementation": "def foo(): pass"}\n```'
         result = bridge._parse_response(raw)
         assert result["function_name"] == "foo"
 
     def test_raises_on_invalid_json(self):
         """Malformed JSON raises LLMBridgeError."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         with pytest.raises(LLMBridgeError, match="Invalid JSON"):
             bridge._parse_response("not json at all")
 
     def test_raises_on_missing_required_field(self):
         """Missing function_name raises error."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         raw = '{"signature": "def foo():", "implementation": "pass"}'
         with pytest.raises(LLMBridgeError, match="Missing required fields"):
             bridge._parse_response(raw)
 
     def test_raises_on_empty_field(self):
         """Empty function_name is treated as missing."""
-        bridge = LLMBridge(api_key="sk-test")
+        bridge = LLMBridge(provider=None)
         raw = '{"function_name": "", "signature": "def foo():", "implementation": "pass"}'
         with pytest.raises(LLMBridgeError, match="Missing required fields"):
             bridge._parse_response(raw)
@@ -177,7 +179,7 @@ class TestResponseParsing:
 class TestProposeAbstraction:
     """Mocked end-to-end tests."""
 
-    @patch("devdna.core.llm_bridge.Anthropic")
+    @patch("devdna.core.llm_anthropic.Anthropic")
     def test_returns_pattern_proposal(self, mock_anthropic, sample_cluster, mock_claude_response):
         """Successful API call returns PatternProposal."""
         mock_client = MagicMock()
@@ -186,7 +188,8 @@ class TestProposeAbstraction:
         mock_client.messages.create.return_value = mock_msg
         mock_anthropic.return_value = mock_client
 
-        bridge = LLMBridge(api_key="sk-test")
+        provider = AnthropicProvider(api_key="sk-test")
+        bridge = LLMBridge(provider)
         proposal = bridge.propose_abstraction(sample_cluster)
 
         assert isinstance(proposal, PatternProposal)
@@ -194,7 +197,7 @@ class TestProposeAbstraction:
         assert proposal.source_hash == sample_cluster.struct_hash
         assert proposal.example_count == 2
 
-    @patch("devdna.core.llm_bridge.Anthropic")
+    @patch("devdna.core.llm_anthropic.Anthropic")
     def test_api_error_raises_llm_bridge_error(self, mock_anthropic, sample_cluster):
         """API failure is wrapped in LLMBridgeError."""
         from anthropic import APIError
@@ -207,11 +210,12 @@ class TestProposeAbstraction:
         )
         mock_anthropic.return_value = mock_client
 
-        bridge = LLMBridge(api_key="sk-test")
+        provider = AnthropicProvider(api_key="sk-test")
+        bridge = LLMBridge(provider)
         with pytest.raises(LLMBridgeError, match="API error"):
             bridge.propose_abstraction(sample_cluster)
 
-    @patch("devdna.core.llm_bridge.Anthropic")
+    @patch("devdna.core.llm_anthropic.Anthropic")
     def test_empty_response_raises(self, mock_anthropic, sample_cluster):
         """Empty content raises LLMBridgeError."""
         mock_client = MagicMock()
@@ -220,7 +224,8 @@ class TestProposeAbstraction:
         mock_client.messages.create.return_value = mock_msg
         mock_anthropic.return_value = mock_client
 
-        bridge = LLMBridge(api_key="sk-test")
+        provider = AnthropicProvider(api_key="sk-test")
+        bridge = LLMBridge(provider)
         with pytest.raises(LLMBridgeError, match="empty content"):
             bridge.propose_abstraction(sample_cluster)
 
@@ -228,7 +233,7 @@ class TestProposeAbstraction:
 class TestProposeBatch:
     """Tests for batch processing with failure tolerance."""
 
-    @patch("devdna.core.llm_bridge.Anthropic")
+    @patch("devdna.core.llm_anthropic.Anthropic")
     def test_skips_failed_clusters(self, mock_anthropic, sample_cluster):
         """One bad cluster doesn't kill the batch."""
         mock_client = MagicMock()
@@ -237,12 +242,13 @@ class TestProposeBatch:
         mock_client.messages.create.return_value = mock_msg
         mock_anthropic.return_value = mock_client
 
-        bridge = LLMBridge(api_key="sk-test")
+        provider = AnthropicProvider(api_key="sk-test")
+        bridge = LLMBridge(provider)
         clusters = [sample_cluster, sample_cluster]  # second will be duplicate hash
         proposals = bridge.propose_batch(clusters)
         assert len(proposals) == 2  # both succeed with same mock
 
-    @patch("devdna.core.llm_bridge.Anthropic")
+    @patch("devdna.core.llm_anthropic.Anthropic")
     def test_returns_partial_results(self, mock_anthropic, sample_cluster):
         """Returns whatever succeeded, logs failures."""
         mock_client = MagicMock()
@@ -252,7 +258,8 @@ class TestProposeBatch:
         mock_client.messages.create.side_effect = [mock_msg, Exception("fail")]
         mock_anthropic.return_value = mock_client
 
-        bridge = LLMBridge(api_key="sk-test")
+        provider = AnthropicProvider(api_key="sk-test")
+        bridge = LLMBridge(provider)
         clusters = [sample_cluster, sample_cluster]
         proposals = bridge.propose_batch(clusters)
         assert len(proposals) == 1
@@ -271,7 +278,8 @@ class TestLiveClaude:
 
     def test_live_proposal(self, sample_cluster):
         """End-to-end with real Claude. Costs ~$0.01."""
-        bridge = LLMBridge()
+        provider = AnthropicProvider()
+        bridge = LLMBridge(provider)
         proposal = bridge.propose_abstraction(sample_cluster)
         assert proposal.function_name
         assert proposal.signature.startswith("def ")

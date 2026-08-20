@@ -28,3 +28,8 @@ __pycache__/
 test_sdk/
 devdna_sdk/
 *.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+env/

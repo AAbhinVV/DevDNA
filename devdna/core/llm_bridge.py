@@ -15,10 +15,7 @@ from devdna.config import config
 1 cluster at a time, if 1 fail it doesnt kill the whole process, log and continue
 '''
 
-try:
-    from anthropic import Anthropic, APIError, APITimeoutError
-except ImportError:
-    Anthropic = None #defer erro until instantiation
+from devdna.core.llm_base import BaseLLMProvider, LLMProviderError
 
 from .scanner import CodeBlock
 
@@ -55,21 +52,17 @@ class LLMBridge:
 
     
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        if Anthropic is None:
-            raise LLMBridgeError("Anthropic package not installed. Run: pip install anthropic>=0.30.0")
-        self.api_key = api_key or config.anthropic_api_key
-        if not self.api_key:
-            raise LLMBridgeError("Anthropic API key not provided. Set the 'ANTHROPIC_API_KEY' environment variable or pass it to the constructor.")
-
-        self.model = model or config.llm_model
-        self.client = Anthropic(api_key=self.api_key)
+    def __init__(self, provider: BaseLLMProvider):
+        self.provider = provider
 
 
     def propose_abstraction(self, cluster: PatternCluster) -> PatternProposal:
         '''send cluster to LLM and get back a PatternProposal'''
         prompt = self._build_prompt(cluster)
-        raw_text = self._call_claude(prompt)
+        try:
+            raw_text = self.provider.complete(prompt)
+        except LLMProviderError as e:
+            raise LLMBridgeError(str(e)) from e
         parsed = self._parse_response(raw_text)
 
         return PatternProposal(
@@ -152,25 +145,7 @@ Rules:
 """
         return prompt
 
-    def _call_claude(self, prompt: str) -> str:
-        try:
-            message = self.client.messages.create(
-                model = config.llm_model,
-                max_tokens = config.llm_max_tokens,
-                temperature = config.llm_temperature,# Low = deterministic, repeatable abstractions
-                messages = [{"role": "user", "content": prompt}]
-            )
-        except APITimeoutError as e:
-            raise LLMBridgeError(f"Claude API timeout: {e}")
-        except APIError as e:
-            raise LLMBridgeError(f"API error: {e}")
-        except Exception as e:
-            raise LLMBridgeError(f"Unexpected Claude error: {e}")
 
-        if not message.content or not message.content[0].text:
-            raise LLMBridgeError("Claude returned empty content.")
-
-        return message.content[0].text.strip()
 
     #response parsing
     def _parse_response(self, raw_response: str) -> Dict[str, Any]:

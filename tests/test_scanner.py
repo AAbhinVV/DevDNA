@@ -136,7 +136,7 @@ class TestExtractFunctions:
     def test_extracts_simple_function(self, tmp_path: Path):
         """Basic function definition."""
         f = tmp_path / "simple.py"
-        f.write_text("def hello():\n    pass")
+        f.write_text("def hello():\n    return 'world'")
         blocks = extract_functions(f)
         assert len(blocks) == 1
         assert blocks[0].func_name == "hello"
@@ -144,16 +144,22 @@ class TestExtractFunctions:
     def test_extracts_multiple_functions(self, tmp_path: Path):
         """Multiple functions in one file."""
         f = tmp_path / "multi.py"
-        f.write_text("def a(): pass\ndef b(): pass\ndef c(): pass")
+        f.write_text("def a(): return 1\ndef b(): return 2\ndef c(): return 3")
         blocks = extract_functions(f)
         assert len(blocks) == 3
         names = {b.func_name for b in blocks}
         assert names == {"a", "b", "c"}
 
+    def test_skips_trivial_stubs(self, tmp_path: Path):
+        """pass/.../docstring-only stubs are excluded by default (skip_trivial_stubs)."""
+        f = tmp_path / "stubs.py"
+        f.write_text('def a(): pass\ndef b(): ...\ndef c(): """Docs only."""')
+        assert extract_functions(f) == []
+
     def test_skips_nested_functions(self, tmp_path: Path):
         """Nested functions are extracted by ast.walk — verify behavior."""
         f = tmp_path / "nested.py"
-        f.write_text("def outer():\n    def inner(): pass")
+        f.write_text("def outer():\n    def inner(): return 1\n    return inner")
         blocks = extract_functions(f)
         # ast.walk finds both outer and inner — this is current behavior
         # Document whether this is intended or a known limitation
@@ -162,7 +168,7 @@ class TestExtractFunctions:
     def test_skips_non_function_defs(self, tmp_path: Path):
         """Classes are not extracted (only FunctionDef)."""
         f = tmp_path / "classy.py"
-        f.write_text("class Foo:\n    def method(self): pass")
+        f.write_text("class Foo:\n    def method(self): return self")
         blocks = extract_functions(f)
         # Currently only FunctionDef, not AsyncFunctionDef or classes
         # method IS a FunctionDef inside a ClassDef, so ast.walk finds it
@@ -186,7 +192,7 @@ class TestExtractFunctions:
     def test_preserves_lineno(self, tmp_path: Path):
         """Line numbers are accurate."""
         f = tmp_path / "lines.py"
-        f.write_text("# comment\n\ndef foo():\n    pass")
+        f.write_text("# comment\n\ndef foo():\n    return 42")
         blocks = extract_functions(f)
         assert blocks[0].lineno == 3
 
@@ -213,17 +219,17 @@ class TestScanDirectory:
 
     def test_finds_python_files(self, tmp_path: Path):
         """Discovers .py files recursively."""
-        (tmp_path / "a.py").write_text("def f1(): pass")
+        (tmp_path / "a.py").write_text("def f1(): return 1")
         (tmp_path / "sub").mkdir()
-        (tmp_path / "sub" / "b.py").write_text("def f2(): pass")
+        (tmp_path / "sub" / "b.py").write_text("def f2(): return 2")
         blocks = scan_directory(tmp_path)
         assert len(blocks) == 2
 
     def test_excludes_venv(self, tmp_path: Path):
         """venv directory is skipped."""
         (tmp_path / "venv").mkdir()
-        (tmp_path / "venv" / "site.py").write_text("def fake(): pass")
-        (tmp_path / "real.py").write_text("def real(): pass")
+        (tmp_path / "venv" / "site.py").write_text("def fake(): return 'fake'")
+        (tmp_path / "real.py").write_text("def real(): return 'real'")
         blocks = scan_directory(tmp_path)
         assert len(blocks) == 1
         assert blocks[0].func_name == "real"
@@ -244,9 +250,9 @@ class TestScanDirectory:
     def test_respects_custom_exclude(self, tmp_path: Path):
         """Custom exclusion patterns work."""
         (tmp_path / "custom_skip").mkdir()
-        (tmp_path / "custom_skip" / "a.py").write_text("def a(): pass")
+        (tmp_path / "custom_skip" / "a.py").write_text("def a(): return 1")
         (tmp_path / "keep").mkdir()
-        (tmp_path / "keep" / "b.py").write_text("def b(): pass")
+        (tmp_path / "keep" / "b.py").write_text("def b(): return 2")
         blocks = scan_directory(tmp_path, exclude_patterns={"custom_skip"})
         assert len(blocks) == 1
         assert blocks[0].func_name == "b"

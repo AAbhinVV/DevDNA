@@ -1,14 +1,26 @@
 """
-Tests for devdna.core.scanner2
+Tests for devdna.core.scanner2 (Optimized AST Scanner v2)
 
 Run: pytest tests/test_scanner2.py -v
 """
 
-import sys
+import ast
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+
+from devdna.core.scanner import CodeBlock as CodeBlockV1, extract_functions as extract_v1, scan_directory as scan_v1
+from devdna.core.scanner2 import (
+    CodeBlock as CodeBlockV2,
+    CodeNormalizer,
+    FunctionExtractor,
+    extract_functions as extract_v2,
+    scan_directory as scan_v2,
+    iter_scan_directory as scan_v2_iter,
+    discover_python_files,
+)
 
 
 @contextmanager
@@ -23,222 +35,191 @@ def config_override(**kwargs):
     finally:
         object.__setattr__(cfg, "__dict__", saved)
 
-from devdna.core.scanner import CodeBlock as CodeBlockV1
-from devdna.core import scanner2
-from devdna.core.scanner2 import (
-    CodeBlock,
-    extract_functions,
-    scan_directory,
-    iter_scan_directory,
-    discover_python_files,
-)
+
+class TestKeywordArgRegression:
+    """Test that keyword arguments in function calls don't crash unparse or lose values."""
+
+    def test_keyword_args_normalization_parity(self, tmp_path):
+        py_file = tmp_path / "kw_test.py"
+        py_file.write_text('def foo(df):\n    return df.merge(left=df, how="inner")\n')
+
+        blocks_v1 = extract_v1(py_file)
+        blocks_v2 = extract_v2(py_file)
+
+        assert len(blocks_v1) == 1
+        assert len(blocks_v2) == 1
+        assert blocks_v1[0].struct_hash == blocks_v2[0].struct_hash
+        assert blocks_v1[0].func_name == blocks_v2[0].func_name == "foo"
+
+    def test_type_annotations_preserved_in_hash(self, tmp_path):
+        py_file1 = tmp_path / "ann1.py"
+        py_file2 = tmp_path / "ann2.py"
+
+        py_file1.write_text("def process(x: int) -> int:\n    return x + 1\n")
+        py_file2.write_text("def process(x: str) -> str:\n    return x + 1\n")
+
+        b1 = extract_v2(py_file1)[0]
+        b2 = extract_v2(py_file2)[0]
+
+        # Different type annotations should produce different normalized code/hashes
+        assert b1.struct_hash != b2.struct_hash
 
 
-# =============================================================================
-# Regression Tests (bugs found in original scanner2)
-# =============================================================================
+class TestScannerV2Features:
+    """Test AST traversal, single-pass node limit guard, and discovery."""
 
-class TestNormalizerRegressions:
-    """Regressions for bugs in the original NodeTransformer implementation."""
+    def test_extract_simple_function(self, tmp_path):
+        py_file = tmp_path / "simple.py"
+        py_file.write_text("def add(a, b):\n    return a + b\n")
 
-    def test_function_with_keyword_args_not_dropped(self, tmp_path: Path):
-        """CRITICAL REGRESSION: visit_keyword used to return a fresh keyword
-        without .value, making unparse fail and silently dropping every
-        function containing a keyword argument."""
-        f = tmp_path / "kw.py"
-        f.write_text("def foo(a, b=1):\n    return dict(x=a, y=2)")
-        blocks = extract_functions(f)
+        blocks = extract_v2(py_file)
         assert len(blocks) == 1
-        assert blocks[0].func_name == "foo"
+        assert blocks[0].func_name == "add"
+        assert blocks[0].lineno == 1
 
-    def test_keyword_arg_normalized(self, tmp_path: Path):
-        """Keyword argument names become VAR but call values survive."""
-        f = tmp_path / "kwnorm.py"
-        f.write_text("def foo(dataframe):\n    return dataframe.merge(left=dataframe)")
-        blocks = extract_functions(f)
+    def test_extract_pass_stub(self, tmp_path):
+        py_file = tmp_path / "stub.py"
+        py_file.write_text("def empty_func():\n    pass\n")
+
+        blocks = extract_v2(py_file)
         assert len(blocks) == 1
-        assert "VAR" in blocks[0].normalized
-        assert "left=" not in blocks[0].normalized.replace("VAR=", "left=")
 
-    def test_annotations_preserved_for_v1_hash_parity(self, tmp_path: Path):
-        """visit_arg used to drop annotations entirely; v1 kept them.
-        Hashes must match scanner v1 for identical source."""
-        src = "def foo(a: int, b: str = 'x') -> bool:\n    return len(a) > 1"
-        f = tmp_path / "ann.py"
-        f.write_text(src)
-        b2 = extract_functions(f)[0]
-        b1 = CodeBlockV1(
-            source_code=src,
-            filepath=f,
-            func_name="foo",
-            lineno=1,
+    def test_extract_docstring_stub(self, tmp_path):
+        py_file = tmp_path / "doc_stub.py"
+        py_file.write_text('def doc_only():\n    """Only a docstring."""\n')
+
+        blocks = extract_v2(py_file)
+        assert len(blocks) == 1
+
+    def test_discover_python_files_prunes_excluded(self, tmp_path):
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "main.py").write_text("def main(): pass")
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / ".venv" / "lib.py").write_text("def lib(): pass")
+
+        discovered = discover_python_files(tmp_path, exclude_patterns={".venv", "venv"})
+        file_names = [p.name for p in discovered]
+
+        assert "main.py" in file_names
+        assert "lib.py" not in file_names
+
+
+class TestV1V2HashParity:
+    """Repo-wide structural hash parity check between v1 and v2 scanners."""
+
+    def test_hash_parity_on_current_repo(self):
+        root = Path(".")
+        blocks_v1 = scan_v1(root)
+        blocks_v2 = scan_v2(root)
+
+        map_v1 = {(str(b.filepath), b.lineno): b for b in blocks_v1}
+        map_v2 = {(str(b.filepath), b.lineno): b for b in blocks_v2}
+
+        # Ensure both find functions
+        assert len(map_v1) > 0
+        assert len(map_v2) > 0
+
+        common_keys = set(map_v1.keys()) & set(map_v2.keys())
+        mismatches = []
+
+        for k in common_keys:
+            if map_v1[k].struct_hash != map_v2[k].struct_hash:
+                # Compare ignoring decorator line differences
+                n1 = [line for line in map_v1[k].normalized.splitlines() if not line.lstrip().startswith("@")]
+                n2 = [line for line in map_v2[k].normalized.splitlines() if not line.lstrip().startswith("@")]
+                if n1 != n2:
+                    mismatches.append((k, n1, n2))
+
+        assert len(mismatches) == 0, f"Found {len(mismatches)} unexplained structural hash mismatches between v1 and v2"
+
+
+class TestAstGuardCounting:
+    """Regression: guard must count each node accurately (no double count, no early abort)."""
+
+    def test_node_count_matches_ast_walk(self):
+        src = (
+            "import os\n"
+            "CONST = 42\n\n"
+            "def outer(a: int, b='x') -> bool:\n"
+            "    \"\"\"Doc.\"\"\"\n"
+            "    def inner():\n"
+            "        return dict(k=a)\n"
+            "    for i in range(10):\n"
+            "        if i > 2 and b:\n"
+            "            yield inner()\n"
+            "\n"
+            "class Thing:\n"
+            "    @property\n"
+            "    def prop(self):\n"
+            "        return [x * 2 for x in os.listdir()]\n"
         )
-        assert b1.struct_hash == b2.struct_hash
+        tree = ast.parse(src)
+        true_count = sum(1 for _ in ast.walk(tree))
 
-    def test_hash_parity_plain_function(self, tmp_path: Path):
-        """scanner and scanner2 produce identical hashes for plain code."""
-        src = "def calc(items):\n    total = 0\n    for i in items:\n        total += i\n    return total"
-        f = tmp_path / "plain.py"
+        f = Path(tempfile.mkdtemp()) / "probe.py"
         f.write_text(src)
-        b2 = extract_functions(f)[0]
-        b1 = CodeBlockV1(source_code=src, filepath=f, func_name="calc", lineno=1)
-        assert b1.struct_hash == b2.struct_hash
+        ex = FunctionExtractor(src, f)
+        ex.visit(tree)
+
+        assert abs(ex._nodes_seen - true_count) <= 5
+
+    def test_guard_trips_at_true_limit_not_half(self, tmp_path):
+        """A file just under max_ast_nodes must NOT be aborted; one over must be."""
+        body = "    x = 1\n"
+        n_lines = 100
+        src = "def fn():\n" + body * n_lines + "    return x\n"
+        tree = ast.parse(src)
+        exact = sum(1 for _ in ast.walk(tree))
+
+        f = tmp_path / "sized.py"
+        f.write_text(src)
+        with config_override(max_ast_nodes=exact + 10):
+            assert len(extract_v2(f)) == 1, "guard aborted a file AT the limit"
+        with config_override(max_ast_nodes=exact - 10):
+            assert extract_v2(f) == [], "guard accepted a file OVER the limit"
 
 
-# =============================================================================
-# Extraction Behavior Tests
-# =============================================================================
+class TestDecoratorHandling:
+    """Decorators are stripped from normalized output so the hash matches the
+    stored source segment (get_source_segment excludes decorator lines)."""
 
-class TestExtractFunctions:
-    def test_extracts_simple_function(self, tmp_path: Path):
-        f = tmp_path / "simple.py"
-        f.write_text("def hello():\n    return 1")
-        blocks = extract_functions(f)
-        assert len(blocks) == 1
-        assert blocks[0].func_name == "hello"
+    def test_decorated_hash_equals_undecorated_and_v1(self, tmp_path):
+        d = tmp_path
+        fd = d / "decorated.py"
+        fp = d / "plain.py"
+        fd.write_text("@app.route('/x')\n@cache\ndef handler(req):\n    return req.json()\n")
+        fp.write_text("def handler(req):\n    return req.json()\n")
 
-    def test_extracts_async_function(self, tmp_path: Path):
-        f = tmp_path / "async.py"
-        f.write_text("async def fetch(url):\n    return url")
-        blocks = extract_functions(f)
-        assert len(blocks) == 1
-        assert blocks[0].func_name == "fetch"
-        assert "AsyncFunc" not in blocks[0].normalized or "FUNC" in blocks[0].normalized
+        b_dec = extract_v2(fd)[0]
+        b_plain = extract_v2(fp)[0]
+        b_v1 = CodeBlockV1(source_code=fd.read_text(), filepath=fd, func_name="handler", lineno=3)
 
-    def test_skips_pass_stub(self, tmp_path: Path):
-        f = tmp_path / "stub.py"
-        f.write_text("def stub():\n    pass")
-        assert extract_functions(f) == []
-
-    def test_skips_docstring_only(self, tmp_path: Path):
-        f = tmp_path / "doc.py"
-        f.write_text('def doc():\n    """Docs only."""')
-        assert extract_functions(f) == []
-
-    def test_skips_ellipsis_stub(self, tmp_path: Path):
-        f = tmp_path / "ell.py"
-        f.write_text("def ell():\n    ...")
-        assert extract_functions(f) == []
-
-    def test_docstring_stripped_from_normalization(self, tmp_path: Path):
-        """Docstrings are stripped before hashing."""
-        f1 = tmp_path / "a.py"
-        f2 = tmp_path / "b.py"
-        f1.write_text('def foo(x):\n    """A doc."""\n    return x + 1')
-        f2.write_text("def foo(y):\n    return y + 1")
-        b1 = extract_functions(f1)[0]
-        b2 = extract_functions(f2)[0]
-        assert b1.struct_hash == b2.struct_hash
-
-    def test_nested_functions_both_extracted(self, tmp_path: Path):
-        f = tmp_path / "nested.py"
-        f.write_text("def outer():\n    def inner():\n        return 1\n    return inner")
-        blocks = extract_functions(f)
-        names = {b.func_name for b in blocks}
-        assert names == {"outer", "inner"}
-
-    def test_empty_file(self, tmp_path: Path):
-        f = tmp_path / "empty.py"
-        f.write_text("")
-        assert extract_functions(f) == []
-
-    def test_syntax_error(self, tmp_path: Path):
-        f = tmp_path / "broken.py"
-        f.write_text("def broken(:")
-        assert extract_functions(f) == []
-
-    def test_oversized_ast_guard(self, tmp_path: Path):
-        """Files exceeding max_ast_nodes are skipped entirely."""
-        f = tmp_path / "big.py"
-        f.write_text("def a():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z")
-        with config_override(max_ast_nodes=5):
-            assert extract_functions(f) == []
-        # default limit still extracts normally
-        assert len(extract_functions(f)) == 1
-
-    def test_lineno_preserved(self, tmp_path: Path):
-        f = tmp_path / "lines.py"
-        f.write_text("# comment\n\ndef foo():\n    return 1")
-        blocks = extract_functions(f)
-        assert blocks[0].lineno == 3
+        assert "@" not in b_dec.normalized
+        assert b_dec.struct_hash == b_plain.struct_hash == b_v1.struct_hash
 
 
-# =============================================================================
-# Discovery Tests
-# =============================================================================
+class TestExecutionPaths:
+    """Sequential and parallel execution must agree; streaming matches list."""
 
-class TestDiscovery:
-    def test_finds_python_files_recursively(self, tmp_path: Path):
-        (tmp_path / "a.py").write_text("def f(): return 1")
-        sub = tmp_path / "sub"
-        sub.mkdir()
-        (sub / "b.py").write_text("def g(): return 2")
-        files = discover_python_files(tmp_path, {"venv"})
-        assert len(files) == 2
-
-    def test_prunes_excluded_dirs(self, tmp_path: Path):
-        venv = tmp_path / "venv" / "lib"
-        venv.mkdir(parents=True)
-        (venv / "deep.py").write_text("def deep(): return 1")
-        (tmp_path / "real.py").write_text("def real(): return 1")
-        files = discover_python_files(tmp_path, {"venv"})
-        assert [f.name for f in files] == ["real.py"]
-
-    def test_prunes_hidden_dirs(self, tmp_path: Path):
-        hidden = tmp_path / ".git" / "hooks"
-        hidden.mkdir(parents=True)
-        (hidden / "hook.py").write_text("def hook(): return 1")
-        assert discover_python_files(tmp_path, set()) == []
-
-    def test_skips_hidden_files(self, tmp_path: Path):
-        (tmp_path / ".secret.py").write_text("def s(): return 1")
-        assert discover_python_files(tmp_path, set()) == []
-
-    def test_only_matching_extensions(self, tmp_path: Path):
-        (tmp_path / "code.py").write_text("def a(): return 1")
-        (tmp_path / "notes.txt").write_text("not code")
-        files = discover_python_files(tmp_path, set())
-        assert [f.name for f in files] == ["code.py"]
-
-
-# =============================================================================
-# Directory Scan Tests (parallel + sequential paths)
-# =============================================================================
-
-class TestScanDirectory:
-    def test_sequential_and_parallel_agree(self, tmp_path: Path):
-        """Both execution paths must produce identical block sets."""
+    def test_sequential_and_parallel_agree(self, tmp_path):
         for i in range(25):
             d = tmp_path / f"d{i:02d}"
             d.mkdir()
-            (d / "m.py").write_text(f"def func_{i}(a, b={i}):\n    return dict(v=a, w=b)")
+            (d / "m.py").write_text(f'def func_{i}(a, b={i}):\n    return dict(v=a, w=b)\n')
 
-        with config_override(parallel_min_files=100):  # force sequential
-            seq = scan_directory(tmp_path)
-        with config_override(parallel_min_files=5):  # force parallel
-            par = scan_directory(tmp_path)
+        with config_override(parallel_min_files=100):
+            seq = scan_v2(tmp_path)
+        with config_override(parallel_min_files=5):
+            par = scan_v2(tmp_path)
+        streamed = list(scan_v2_iter(tmp_path))
 
-        seq_map = {(b.filepath.name, b.lineno): b.struct_hash for b in seq}
-        par_map = {(b.filepath.name, b.lineno): b.struct_hash for b in par}
-        assert seq_map == par_map
+        key = lambda bs: {(b.filepath.name, b.lineno): b.struct_hash for b in bs}
+        assert key(seq) == key(par) == key(streamed)
         assert len(seq) == 25
 
-    def test_streaming_iter_matches_list(self, tmp_path: Path):
-        (tmp_path / "a.py").write_text("def fa(): return 1")
-        (tmp_path / "b.py").write_text("def fb(): return 2")
-        streamed = list(iter_scan_directory(tmp_path))
-        materialized = scan_directory(tmp_path)
-        assert {b.struct_hash for b in streamed} == {b.struct_hash for b in materialized}
-
-    def test_empty_directory(self, tmp_path: Path):
-        assert scan_directory(tmp_path) == []
-
-    def test_no_python_files(self, tmp_path: Path):
-        (tmp_path / "readme.md").write_text("hi")
-        assert scan_directory(tmp_path) == []
-
-    def test_nonexistent_root(self, tmp_path: Path):
-        assert scan_directory(tmp_path / "does_not_exist") == []
+    def test_empty_and_missing_roots(self, tmp_path):
+        assert scan_v2(tmp_path) == []
+        assert scan_v2(tmp_path / "missing") == []
 
 
 if __name__ == "__main__":

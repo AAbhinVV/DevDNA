@@ -29,6 +29,9 @@ test_sdk/
 devdna_sdk/
 *.egg-info/
 
+# DevDNA learnings (local notes, not source)
+learning.txt
+
 # Virtual environments
 venv/
 .venv/

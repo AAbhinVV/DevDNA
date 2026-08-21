@@ -11,10 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from devdna.core.scanner import CodeBlock as CodeBlockV1, extract_functions as extract_v1, scan_directory as scan_v1
+from devdna.core.scanner import extract_functions as extract_v1, scan_directory as scan_v1
 from devdna.core.scanner2 import (
-    CodeBlock as CodeBlockV2,
-    CodeNormalizer,
     FunctionExtractor,
     extract_functions as extract_v2,
     scan_directory as scan_v2,
@@ -77,16 +75,40 @@ class TestScannerV2Features:
         assert blocks[0].func_name == "add"
         assert blocks[0].lineno == 1
 
-    def test_extract_pass_stub(self, tmp_path):
+    def test_skip_pass_stub(self, tmp_path):
         py_file = tmp_path / "stub.py"
         py_file.write_text("def empty_func():\n    pass\n")
 
         blocks = extract_v2(py_file)
-        assert len(blocks) == 1
+        assert len(blocks) == 0
 
-    def test_extract_docstring_stub(self, tmp_path):
+    def test_skip_docstring_only_stub(self, tmp_path):
         py_file = tmp_path / "doc_stub.py"
         py_file.write_text('def doc_only():\n    """Only a docstring."""\n')
+
+        blocks = extract_v2(py_file)
+        assert len(blocks) == 0
+
+    def test_skip_ellipsis_stub(self, tmp_path):
+        py_file = tmp_path / "ellipsis.py"
+        py_file.write_text("def protocol_method():\n    ...\n")
+
+        blocks = extract_v2(py_file)
+        assert len(blocks) == 0
+
+    def test_flag_off_extracts_stubs(self, tmp_path):
+        """skip_trivial_stubs=False restores raw extraction of stubs."""
+        py_file = tmp_path / "stub.py"
+        py_file.write_text("def empty_func():\n    pass\n")
+
+        with config_override(skip_trivial_stubs=False):
+            blocks = extract_v2(py_file)
+        assert len(blocks) == 1
+
+    def test_real_function_after_docstring_kept(self, tmp_path):
+        """Docstring + real body must NOT be skipped as a stub."""
+        py_file = tmp_path / "real.py"
+        py_file.write_text('def compute(x):\n    """Docs."""\n    return x * 2\n')
 
         blocks = extract_v2(py_file)
         assert len(blocks) == 1
@@ -192,7 +214,7 @@ class TestDecoratorHandling:
 
         b_dec = extract_v2(fd)[0]
         b_plain = extract_v2(fp)[0]
-        b_v1 = CodeBlockV1(source_code=fd.read_text(), filepath=fd, func_name="handler", lineno=3)
+        b_v1 = extract_v1(fd)[0]
 
         assert "@" not in b_dec.normalized
         assert b_dec.struct_hash == b_plain.struct_hash == b_v1.struct_hash

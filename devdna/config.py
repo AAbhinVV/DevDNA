@@ -99,6 +99,15 @@ class Config:
     default_version: str = "0.1.0"
 
     # ------------------------------------------------------------------
+    # Scanner parallelism
+    # ------------------------------------------------------------------
+    # Below this file count, scan inline (process pool spawn overhead,
+    # especially on Windows, exceeds compute time for small scans)
+    parallel_min_files: int = 16
+    # None = auto (cpu_count). Cap workers on memory-constrained hosts.
+    scan_max_workers: Optional[int] = None
+
+    # ------------------------------------------------------------------
     # Security
     # ------------------------------------------------------------------
     db_file_permissions: int = 0o600  # Not enforced on Windows

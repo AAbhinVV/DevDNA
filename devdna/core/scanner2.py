@@ -5,7 +5,7 @@ import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Generator, Iterable, List, Optional, Set
+from typing import Generator, List, Optional, Set
 
 from devdna.config import config
 
@@ -17,9 +17,7 @@ class _AstTooLargeError(Exception):
 
 
 class CodeNormalizer(ast.NodeTransformer):
-    """Normalizes AST nodes IN PLACE, preserving structural fields like
-    keyword values and argument annotations. Mutating in place avoids
-    allocating replacement nodes and guarantees no field is dropped."""
+    """Normalizes AST nodes IN PLACE on an owned deepcopy of the function node."""
 
     def _strip_docstring(self, node) -> None:
         if (
@@ -35,29 +33,24 @@ class CodeNormalizer(ast.NodeTransformer):
         return node
 
     def visit_arg(self, node: ast.arg) -> ast.arg:
-        # Preserve node.annotation - dropping it changed hashes vs scanner v1
         node.arg = config.normalization_tokens["arg"]
-        self.generic_visit(node)
         return node
 
     def visit_keyword(self, node: ast.keyword) -> ast.keyword:
-        # CRITICAL: keep node.value. Returning a fresh keyword(arg=...) without
-        # a value made unparse fail and silently dropped every function
-        # containing a keyword argument (e.g. dict(x=a)).
-        if node.arg is not None:
-            node.arg = config.normalization_tokens["keyword"]
         self.generic_visit(node)
         return node
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
         self._strip_docstring(node)
         node.name = config.normalization_tokens["func_name"]
+        node.decorator_list = []
         self.generic_visit(node)
         return node
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AsyncFunctionDef:
         self._strip_docstring(node)
         node.name = config.normalization_tokens["func_name"]
+        node.decorator_list = []
         self.generic_visit(node)
         return node
 
@@ -77,16 +70,41 @@ class CodeBlock:
     def __init__(
         self,
         source_code: str,
-        normalized_code: str,
-        filepath: Path,
-        func_name: str,
+        filepath: object = None,
+        func_name: str = "",
         lineno: int = 0,
+        normalized_code: Optional[str] = None,
     ):
         self.source_code = source_code.strip()
-        self.normalized = normalized_code.strip()
+
+        # Handle positional overload: CodeBlock(source, normalized_code, filepath, func_name, lineno)
+        if isinstance(filepath, str) and normalized_code is None and isinstance(func_name, Path):
+            normalized_code = filepath
+            filepath = func_name
+            func_name = str(lineno)
+            lineno = 0
+        elif isinstance(filepath, str) and normalized_code is None and not func_name:
+            normalized_code = filepath
+            filepath = Path(".")
+            func_name = ""
+
+        if not isinstance(filepath, Path):
+            filepath = Path(str(filepath)) if filepath else Path(".")
+
         self.filepath = filepath
-        self.func_name = func_name
-        self.lineno = lineno
+        self.func_name = str(func_name) if func_name else ""
+        self.lineno = int(lineno) if lineno else 0
+
+        if normalized_code is None:
+            try:
+                tree = ast.parse(self.source_code)
+                norm_node = CodeNormalizer().visit(tree)
+                self.normalized = ast.unparse(norm_node).strip()
+            except Exception:
+                self.normalized = ""
+        else:
+            self.normalized = normalized_code.strip()
+
         self.struct_hash = hashlib.sha256(
             self.normalized.encode()
         ).hexdigest()[: config.struct_hash_length]
@@ -96,10 +114,7 @@ class CodeBlock:
 
 
 class FunctionExtractor(ast.NodeVisitor):
-    """Single-pass visitor that extracts and normalizes function definitions.
-
-    The max_ast_nodes DoS guard is enforced DURING traversal, eliminating the
-    separate full-tree counting pass."""
+    """Single-pass visitor that extracts and normalizes function definitions."""
 
     def __init__(self, source_code: str, filepath: Path):
         self.source_code = source_code
@@ -131,9 +146,6 @@ class FunctionExtractor(ast.NodeVisitor):
         return False
 
     def _normalize_node(self, node: ast.AST) -> Optional[str]:
-        """Normalize without deepcopy when safe. Functions WITHOUT nested defs
-        own their subtree exclusively at extraction time, so mutating in place
-        is free of side effects; only those cases pay the deepcopy cost."""
         try:
             if self._contains_nested_def(node):
                 working = copy.deepcopy(node)
@@ -149,15 +161,11 @@ class FunctionExtractor(ast.NodeVisitor):
         return normalized_code
 
     def _validate_and_extract(self, node: ast.AST) -> None:
-        # Capture metadata BEFORE normalization - the in-place fast path
-        # mutates node.name, and func_name must keep the original value.
         original_name = getattr(node, "name", None)
-        # 1. Name & line number validation
         if not original_name or getattr(node, "lineno", 0) <= 0:
             self.skipped_functions += 1
             return
 
-        # 2. Source segment extraction & non-empty check
         try:
             func_source = ast.get_source_segment(self.source_code, node)
         except Exception:
@@ -168,24 +176,26 @@ class FunctionExtractor(ast.NodeVisitor):
             self.skipped_functions += 1
             return
 
-        # 3. Trivial body validation (skip empty pass / ... / docstring-only stubs)
-        body = node.body
-        if body and len(body) == 1:
-            first_stmt = body[0]
-            if isinstance(first_stmt, ast.Pass):
-                logger.debug("Skipping trivial stub %s:%s", self.filepath, node.lineno)
-                self.skipped_functions += 1
-                return
-            if (
-                isinstance(first_stmt, ast.Expr)
-                and isinstance(first_stmt.value, ast.Constant)
-                and (first_stmt.value.value is Ellipsis or isinstance(first_stmt.value.value, str))
-            ):
-                logger.debug("Skipping docstring-only stub %s:%s", self.filepath, node.lineno)
-                self.skipped_functions += 1
-                return
+        # Trivial body validation: skip pass / ... / docstring-only stubs.
+        # All trivial stubs normalize to an identical hash and would form a
+        # single meaningless cluster in the analyzer.
+        if config.skip_trivial_stubs:
+            body = node.body
+            if body and len(body) == 1:
+                first_stmt = body[0]
+                if isinstance(first_stmt, ast.Pass):
+                    logger.debug("Skipping pass-only stub %s:%s", self.filepath, node.lineno)
+                    self.skipped_functions += 1
+                    return
+                if (
+                    isinstance(first_stmt, ast.Expr)
+                    and isinstance(first_stmt.value, ast.Constant)
+                    and (first_stmt.value.value is Ellipsis or isinstance(first_stmt.value.value, str))
+                ):
+                    logger.debug("Skipping docstring/ellipsis-only stub %s:%s", self.filepath, node.lineno)
+                    self.skipped_functions += 1
+                    return
 
-        # 4. Normalization with resilient exception boundary
         normalized_code = self._normalize_node(node)
         if normalized_code is None:
             self.skipped_functions += 1
@@ -243,11 +253,6 @@ def discover_python_files(
     root: Path,
     exclude_patterns: Set[str],
 ) -> List[Path]:
-    """Single-pass os.walk discovery with eager directory pruning.
-
-    Unlike per-extension rglob (N full traversals that enumerate excluded
-    trees before filtering), pruning never descends into venv/node_modules/
-    hidden dirs at all. resolve() is called ONLY for symlinks, not per file."""
     try:
         root_resolved = root.resolve()
     except OSError:
@@ -260,7 +265,6 @@ def discover_python_files(
     py_files: List[Path] = []
 
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        # Prune excluded and hidden directories BEFORE descending
         dirnames[:] = sorted(
             d for d in dirnames
             if d not in exclude_patterns and not d.startswith(".")
@@ -292,9 +296,6 @@ def iter_scan_directory(
     root: Path = config.scan_root,
     exclude_patterns: Optional[Set[str]] = None,
 ) -> Generator[CodeBlock, None, None]:
-    """Streaming scan: yields CodeBlocks as each file completes, so callers
-    can write to DB/progress UI incrementally instead of holding an entire
-    repository's blocks in memory."""
     if not isinstance(root, Path):
         root = Path(root)
 
@@ -307,8 +308,6 @@ def iter_scan_directory(
     if not py_files:
         return
 
-    # Small scans: process pool spawn overhead (especially Windows spawn)
-    # exceeds compute time - run inline instead.
     if len(py_files) < config.parallel_min_files:
         logger.debug("File count below threshold (%d); scanning sequentially", len(py_files))
         for f in py_files:
@@ -333,6 +332,4 @@ def scan_directory(
     root: Path = config.scan_root,
     exclude_patterns: Optional[Set[str]] = None,
 ) -> List[CodeBlock]:
-    """Parallel directory scanner. Materializes all blocks (use
-    iter_scan_directory for streaming)."""
     return list(iter_scan_directory(root, exclude_patterns))

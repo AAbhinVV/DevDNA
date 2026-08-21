@@ -70,7 +70,7 @@ class CodeBlock:
     def __init__(
         self,
         source_code: str,
-        filepath: object = None,
+        filepath: Path|None = None,
         func_name: str = "",
         lineno: int = 0,
         normalized_code: Optional[str] = None,
@@ -124,11 +124,15 @@ class FunctionExtractor(ast.NodeVisitor):
         self._nodes_seen = 0
         self.skipped_functions = 0
 
-    def visit(self, node: ast.AST) -> None:
+    def generic_visit(self, node: ast.AST) -> None:
+        # DoS guard: count nodes during traversal instead of a separate
+        # full-tree pass. Counting here (not in visit()) guarantees exactly
+        # one increment per node regardless of which visitor methods exist,
+        # and cannot double-count via explicit visitor dispatch.
         self._nodes_seen += 1
         if self._nodes_seen > config.max_ast_nodes:
             raise _AstTooLargeError
-        super().visit(node)
+        super().generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._validate_and_extract(node)
@@ -138,19 +142,14 @@ class FunctionExtractor(ast.NodeVisitor):
         self._validate_and_extract(node)
         self.generic_visit(node)
 
-    @staticmethod
-    def _contains_nested_def(node: ast.AST) -> bool:
-        for child in ast.walk(node):
-            if child is not node and isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                return True
-        return False
-
     def _normalize_node(self, node: ast.AST) -> Optional[str]:
+        """Normalize a deepcopy of the function node. The live file-level AST
+        is NEVER mutated: extraction continues walking it afterwards, nested
+        functions must be extracted from pristine nodes, and source/lineno/
+        stub checks always see original data. The deepcopy cost is negligible
+        next to parse/unparse and removes a whole class of aliasing bugs."""
         try:
-            if self._contains_nested_def(node):
-                working = copy.deepcopy(node)
-            else:
-                working = node
+            working = copy.deepcopy(node)
             transformed = self.normalizer.visit(working)
             normalized_code = ast.unparse(transformed)
         except Exception:

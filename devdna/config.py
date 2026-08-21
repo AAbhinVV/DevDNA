@@ -106,6 +106,10 @@ class Config:
     parallel_min_files: int = 16
     # None = auto (cpu_count). Cap workers on memory-constrained hosts.
     scan_max_workers: Optional[int] = None
+    # Skip functions whose body is only pass / ... / a docstring. Without
+    # this, every trivial stub normalizes to the same hash and forms one
+    # giant meaningless cluster in the analyzer.
+    skip_trivial_stubs: bool = True
 
     # ------------------------------------------------------------------
     # Security
